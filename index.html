@@ -904,10 +904,10 @@ var XICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke=
 function showDashModal(type){
   if(type === 'vehicles-available'){
     var avail = DB.vehicles().filter(function(v){ return v.status === 'available'; });
-    openModal({ title:'可用车辆（' + avail.length + '辆）', wide:true, body:'<table style="width:100%;font-size:13px"><thead><tr><th>车牌</th><th>类型</th><th>座位</th><th>驾驶员</th><th>线路牌</th></tr></thead><tbody>' + avail.map(function(v){ var d = driverById(v.driverId); return '<tr><td>' + esc(v.plate) + '</td><td>' + esc(v.type) + '</td><td>' + v.seats + '</td><td>' + esc(d ? d.name : '未绑定') + '</td><td>' + esc(v.permitPlace||'—') + '</td></tr>'; }).join('') + '</tbody></table>' });
+    openModal({ title:'可用车辆（' + avail.length + '辆）', wide:true, body:'<table style="width:100%;font-size:13px"><thead><tr><th>车牌</th><th>类型</th><th>座位</th><th>驾驶员</th><th>线路牌</th></tr></thead><tbody>' + avail.map(function(v){ var d = driverById(v.driverId); return '<tr><td>' + esc(v.plate) + '</td><td>' + esc(v.type) + '</td><td>' + v.seats + '</td><td>' + esc(d ? d.name : '未绑定') + '</td><td>' + esc(v.permitPlace||'—') + '</td></tr>'; }).join('') + '</tbody></table>', footer: '<button type="button" class="btn ghost" data-close>关闭</button>' });
   } else if(type === 'revenue'){
     var rows = DB.orders().filter(function(o){ return o.status !== 'cancelled'; }).sort(function(a,b){ return b.startTime.localeCompare(a.startTime); }).slice(0,20);
-    openModal({ title:'最近营收明细', wide:true, body:'<table style="width:100%;font-size:13px"><thead><tr><th>单号</th><th>行程</th><th>业务员</th><th>金额</th></tr></thead><tbody>' + rows.map(function(o){ return '<tr><td>' + esc(o.no) + '</td><td>' + esc(o.startPoint) + '→' + esc(o.endPoint) + '</td><td>' + esc(o.salesperson||'—') + '</td><td>¥' + fmtMoney(o.price) + '</td></tr>'; }).join('') + '</tbody></table>' });
+    openModal({ title:'最近营收明细', wide:true, body:'<table style="width:100%;font-size:13px"><thead><tr><th>单号</th><th>行程</th><th>业务员</th><th>金额</th></tr></thead><tbody>' + rows.map(function(o){ return '<tr><td>' + esc(o.no) + '</td><td>' + esc(o.startPoint) + '→' + esc(o.endPoint) + '</td><td>' + esc(o.salesperson||'—') + '</td><td>¥' + fmtMoney(o.price) + '</td></tr>'; }).join('') + '</tbody></table>', footer: '<button type="button" class="btn ghost" data-close>关闭</button>' });
   }
 }
 function openModal(opts){
@@ -918,7 +918,7 @@ function openModal(opts){
   bd.innerHTML =
     '<div class="modal' + (opts.wide ? ' wide' : '') + '" role="dialog" aria-modal="true">' +
       '<div class="modal-head"><h3>' + (opts.title || '') + '</h3>' +
-        '<button type="button" class="modal-close" aria-label="关闭">' + XICON + '</button></div>' +
+        '<button type="button" class="modal-close" aria-label="关闭" onclick="closeModal()">' + XICON + '</button></div>' +
       '<div class="modal-body">' + (opts.body || '') + '</div>' +
       (opts.footer ? '<div class="modal-foot">' + opts.footer + '</div>' : '') +
     '</div>';
@@ -943,7 +943,7 @@ function closeModal(){
   document.body.style.overflow = '';
   while(root.firstChild){
     var bd = root.firstChild;
-    if(bd._onClose){ var cb = bd._onClose; bd._onClose = null; cb(); }
+    if(bd._onClose){ var cb = bd._onClose; bd._onClose = null; try{ cb(); }catch(e){} }
     root.removeChild(bd);
   }
 }
