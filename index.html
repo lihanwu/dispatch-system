@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261024h';
+var APP_VER = '20261024i';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -1250,6 +1250,7 @@ var OV_STATE = { d0:'', d1:'' };
 RENDER.overview = function(){
   var el = document.getElementById('view-overview');
   var vehicles = DB.vehicles().slice().sort(function(a,b){ return (parseInt(b.seats)||0) - (parseInt(a.seats)||0); }), orders = DB.orders();
+  var pendC = DB.conflicts().filter(function(c){ return c.status === 'pending'; });
   var TODAY = todayStr();
   var allD = orders.map(function(o){ return dateFromDT(o.startTime); }).sort();
   var g0 = OV_STATE.d0 || (allD.length ? allD[0] : addDays(TODAY, -3));
@@ -1333,7 +1334,8 @@ RENDER.overview = function(){
           var ex = (o.extraVehicles || []).find(function(x){ return x.vehicleId === v.id; });
           if(ex && ex.driverId) drvId = ex.driverId;
           var drv = driverById(drvId);
-          return (o.tempSwap && drv ? '<b>' + esc(drv.name) + ' <span style="color:#C0392B">(改)</span></b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + ' <b style="color:#8A6A1D">¥' + fmtMoney(daily) + '</b>'; }).join('<br>') +
+          var isConf = confDates[o.id] && confDates[o.id][dt];
+          return (o.tempSwap && drv ? '<b>' + esc(drv.name) + ' <span style="color:#C0392B">(改)</span></b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + ' <b style="color:#8A6A1D">¥' + fmtMoney(daily) + '</b>' + (isConf ? ' <span style="color:#C0392B;font-weight:700">套单</span>' : ''); }).join('<br>') +
         '</div></td>';
     }).join('');
     return '<tr>' +
@@ -1350,7 +1352,8 @@ RENDER.overview = function(){
         '<label style="font-size:12px;color:var(--muted)">结束 <input id="ov-d1" type="date" value="' + esc(OV_STATE.d1) + '" style="margin-left:4px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px"></label>' +
         '<button type="button" class="btn ghost" id="ov-reset">清除</button>' +
       '</div></div>' +
-    '<div class="card"><div class="card-head"><h2>排班表</h2><div style="font-size:12px;color:var(--muted)">最多显示14天 · 周末列米黄底纹</div></div>' +
+    '<div class="card" style="margin-bottom:10px">' + (pendC.length ? '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#FFF3D6;border:1px solid #F0D9A8;border-radius:10px"><span style="color:#7C520F;font-weight:700">⚠ 待处理套单 ' + pendC.length + ' 条（同一车辆/驾驶员时间重叠）</span><a href="#/conflicts" style="color:#C0392B;font-weight:700;text-decoration:none">去处理 →</a></div>' : '<div style="padding:10px 14px;background:#F2FAF2;border:1px solid #D5E8D5;border-radius:10px;color:#2E7D32">✅ 无待处理套单</div>') + '</div>' +
+    '<div class="card"><div class="card-head"><h2>排班表</h2><div style="font-size:12px;color:var(--muted)">最多显示14天 · 周末列米黄底纹 · 冲突格黄底 + 「套单」红标 · 临时改排显示「驾驶员 (改)」</div></div>' +
       '<div style="overflow:auto;max-height:70vh;-webkit-overflow-scrolling:touch"><table style="min-width:max-content"><colgroup><col style="width:40px"><col style="width:96px"><col style="width:56px"><col style="width:80px"><col style="width:110px">' + dayList.map(function(){ return '<col style="width:150px">'; }).join('') + '</colgroup>' +
       '<thead>' + gridHead + '</thead><tbody>' + gridRows + '</tbody></table></div></div>';
   var o0 = document.getElementById('ov-d0'), o1 = document.getElementById('ov-d1');
