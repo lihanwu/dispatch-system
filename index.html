@@ -627,7 +627,15 @@ async function supaPush(tn, list){
           return fetch(SUPA.url + '/rest/v1/' + tn + '?id=eq.' + encodeURIComponent(id), { method:'PATCH', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal' }), body: JSON.stringify(r) }).then(function(res){ if(!res.ok) throw new Error('PATCH' + res.status); });
         }));
       }
-      await fetch(SUPA.url + '/rest/v1/' + tn, { method:'POST', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal,resolution=merge-duplicates' }), body: JSON.stringify(rows) }).then(function(res){ if(!res.ok) throw new Error('POST' + res.status); });
+      // 逐行 POST：批量 POST 要求所有对象 key 一致，而空字段省略会导致 key 不一致（PGRST102）；
+      // 逐行 POST 既避免该问题，也让空字段行不触发 NOT NULL 约束（如 rest_start）
+      var CH2 = 8;
+      for(var j = 0; j < rows.length; j += CH2){
+        var batch2 = rows.slice(j, j + CH2);
+        await Promise.all(batch2.map(function(r){
+          return fetch(SUPA.url + '/rest/v1/' + tn, { method:'POST', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal,resolution=merge-duplicates' }), body: JSON.stringify(r) }).then(function(res){ if(!res.ok) throw new Error('POST' + res.status); });
+        }));
+      }
       var ids = list.map(function(o){ return String(o.id).replace(/,/g, ''); }).filter(Boolean).join(',');
       await fetch(SUPA.url + '/rest/v1/' + tn + '?id=not.in.(' + ids + ')', { method:'DELETE', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal' }) }).then(function(res){ if(!res.ok) throw new Error('DELETE' + res.status); });
     } else {
