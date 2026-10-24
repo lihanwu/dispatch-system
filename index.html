@@ -638,14 +638,22 @@ async function supaPush(tn, list){
           return fetch(SUPA.url + '/rest/v1/' + tn, { method:'POST', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal,resolution=merge-duplicates' }), body: JSON.stringify(r) }).then(function(res){ if(!res.ok) throw new Error('POST' + res.status); });
         }));
       }
-      var ids = list.map(function(o){ return String(o.id).replace(/,/g, ''); }).filter(Boolean).join(',');
-      await fetch(SUPA.url + '/rest/v1/' + tn + '?id=not.in.(' + ids + ')', { method:'DELETE', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal' }) }).then(function(res){ if(!res.ok) throw new Error('DELETE' + res.status); });
+      // 注意：不做全量 DELETE 清理（?id=not.in.）。多端同时使用时，任一端的周期推送
+      // 都会把"云端存在但本端列表没有"的行删掉，导致 A 端新建/修改的数据被 B 端误删。
+      // 删除统一走 supaDeleteRow（页面删除操作时按 id 显式删除云端该行）。
     } else {
-      await fetch(SUPA.url + '/rest/v1/' + tn + '?id=neq.__none__', { method:'DELETE', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal' }) }).then(function(res){ if(!res.ok) throw new Error('DEL' + res.status); });
+      // 空列表不推送（保留云端数据），避免清空
     }
     supaOnline = true;
     return true;
   }catch(e){ console.error('PUSH_FAIL:' + (e && e.message ? e.message : e)); return false; }
+}
+/* 按 id 显式删除云端某行（页面删除操作调用，避免全量 DELETE 误删他人数据） */
+function supaDeleteRow(tn, id){
+  if(!id) return;
+  try{
+    fetch(SUPA.url + '/rest/v1/' + tn + '?id=eq.' + encodeURIComponent(String(id).replace(/,/g, '')), { method:'DELETE', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal' }) }).then(function(res){ if(!res.ok) console.error('DEL_ROW_FAIL:' + tn + ':' + res.status); });
+  }catch(e){}
 }
 ['vehicles','drivers','orders','conflicts','users'].forEach(function(tn){
   var key = 'save' + tn[0].toUpperCase() + tn.slice(1);
@@ -1854,6 +1862,7 @@ function deleteVehicle(id){
   confirmDialog('删除车辆', '确定删除车辆 <b>' + esc(v.plate) + '</b>？' + (busy ? '<br><span style="color:var(--danger)">该车仍有待执行 / 执行中的调度单，删除后这些调度单将失去车辆信息。</span>' : ''), '删除', 'danger', function(){
     var vehicles = DB.vehicles().filter(function(x){ return x.id !== id; });
     DB.saveVehicles(vehicles);
+    supaDeleteRow('vehicles', id);
     var drivers = DB.drivers();
     drivers.forEach(function(d){ if(d.vehicleId === id) d.vehicleId = null; });
     DB.saveDrivers(drivers);
@@ -1959,6 +1968,7 @@ function deleteDriver(id){
   confirmDialog('删除驾驶员', '确定删除驾驶员 <b>' + esc(d.name) + '</b>？' + (busy ? '<br><span style="color:var(--danger)">该驾驶员仍有待执行 / 执行中的调度单，删除后这些调度单将失去驾驶员信息。</span>' : ''), '删除', 'danger', function(){
     var drivers = DB.drivers().filter(function(x){ return x.id !== id; });
     DB.saveDrivers(drivers);
+    supaDeleteRow('drivers', id);
     var vehicles = DB.vehicles();
     vehicles.forEach(function(v){ if(v.driverId === id) v.driverId = null; });
     DB.saveVehicles(vehicles);
@@ -2326,6 +2336,7 @@ function orderDel(id){
     var wasExecuting = o.status === 'executing';
     var orders = DB.orders().filter(function(x){ return x.id !== id; });
     DB.saveOrders(orders);
+    supaDeleteRow('orders', id);
     if(wasExecuting) releaseOrderResources(orderById(id));
     var confs = DB.conflicts().filter(function(c){ return c.orderA !== id && c.orderB !== id; });
     DB.saveConflicts(confs);
@@ -2410,6 +2421,7 @@ function conflictDel(id){
   confirmDialog('删除套单记录', '确定删除该套单记录？', '删除', 'danger', function(){
     var confs = DB.conflicts().filter(function(x){ return x.id !== id; });
     DB.saveConflicts(confs);
+    supaDeleteRow('conflicts', id);
     toast('套单记录已删除');
     refreshCurrent();
   });
@@ -2614,6 +2626,7 @@ function deleteUser(id){
   }
   confirmDialog('删除账号', '确定删除账号 <b>' + esc(u.username) + '</b>？', '删除', 'danger', function(){
     DB.saveUsers(DB.users().filter(function(x){ return x.id !== id; }));
+    supaDeleteRow('users', id);
     toast('账号已删除');
     renderUserRows();
   });
