@@ -614,7 +614,9 @@ async function supaPull(){
   normalizeData();
 }
 async function supaPush(tn, list){
-  if(!supaOnline) return true;
+  // 不再因 supaOnline=false 静默跳过：页面加载时云端拉取失败会导致 supaOnline 保持 false，
+  // 若此时跳过推送，用户保存的数据将永远不上云端，并被后续拉取回滚（表现为"保存后刷新又恢复"）。
+  // 改为始终尝试推送；成功则确认在线，失败由调用方 toast 提示。
   try{
     var rows = list.map(function(o){ return objToRow(tn, o); });
     if(rows.length){
@@ -641,8 +643,9 @@ async function supaPush(tn, list){
     } else {
       await fetch(SUPA.url + '/rest/v1/' + tn + '?id=neq.__none__', { method:'DELETE', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal' }) }).then(function(res){ if(!res.ok) throw new Error('DEL' + res.status); });
     }
+    supaOnline = true;
     return true;
-  }catch(e){ return false; }
+  }catch(e){ console.error('PUSH_FAIL:' + (e && e.message ? e.message : e)); return false; }
 }
 ['vehicles','drivers','orders','conflicts','users'].forEach(function(tn){
   var key = 'save' + tn[0].toUpperCase() + tn.slice(1);
