@@ -2090,7 +2090,7 @@ function openOrderModal(editId, opts){
       var selDrv = selected[v.id] ? selected[v.id].driverId : (v.driverId || '');
       var selDrvName = driverById(selDrv) ? driverById(selDrv).name : '';
       var drvObj = selDrv ? driverById(selDrv) : null;
-      var restBadge = (drvObj && drvObj.onRest) ? ' <span style="color:#C0392B;font-size:11px;font-weight:600">调休' + restRangeText(drvObj) + '</span>' : '';
+      var restBadge = (drvObj && drvObj.onRest) ? ' <span style="color:#C0392B;font-size:11px;font-weight:600">' + restRangeText(drvObj) + '</span>' : '';
       var selPrice = selected[v.id] ? (selected[v.id].price || '') : '';
       return '<tr data-vid="' + v.id + '" style="' + (isSel ? 'background:#E3F0FF' : '') + '">' +
         '<td><input type="checkbox" class="vf-cb" data-vid="' + v.id + '" style="width:auto"' + (isSel ? ' checked' : '') + '></td>' +
