@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261024j';
+var APP_VER = '20261024k';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -769,28 +769,14 @@ function badge(statusMap, key){
 }
 function actionMenu(btns){
   if(!btns.length) return '';
-  return '<span class="am-wrap" style="position:relative;display:inline-block"><button type="button" class="btn link am-dot" style="font-size:18px;padding:2px 8px">⋯</button>' +
+  return '<span class="am-wrap" style="position:relative;display:inline-block"><button type="button" class="btn link am-dot" onclick="var mm=this.closest(\'.am-wrap\').querySelector(\'.am-menu\');if(mm){var was=mm.style.display===\'block\';document.querySelectorAll(\'.am-menu\').forEach(function(x){x.style.display=\'none\';});if(!was){var r=this.getBoundingClientRect();mm.style.top=(r.bottom+4)+\'px\';var mw=mm.offsetWidth||100;mm.style.left=Math.max(8,r.right-mw)+\'px\';mm.style.display=\'block\';}}" style="font-size:18px;padding:2px 8px">⋯</button>' +
     '<div class="am-menu" style="display:none;position:fixed;z-index:9999;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.18);min-width:100px;text-align:left">' +
     btns.map(function(b){ return '<div style="padding:4px 12px">' + b + '</div>'; }).join('') + '</div></span>';
 }
-/* ⋯ 菜单全局事件委托：点击按钮展开（fixed定位，不受表格裁剪），点击其他关闭 */
+/* ⋯ 菜单：点击非按钮区域时关闭所有菜单（展开由按钮内联onclick控制） */
 document.addEventListener('click', function(e){
-  var menus = document.querySelectorAll('.am-menu');
-  var dot = null;
-  if(e.target && e.target.closest){ dot = e.target.closest('.am-dot'); }
-  menus.forEach(function(m){ m.style.display = 'none'; });
-  if(dot){
-    e.preventDefault();
-    var w = dot.closest('.am-wrap');
-    var menu = w ? w.querySelector('.am-menu') : null;
-    if(menu){
-      var r = dot.getBoundingClientRect();
-      menu.style.top = (r.bottom + 4) + 'px';
-      var mw = menu.offsetWidth || 100;
-      menu.style.left = Math.max(8, r.right - mw) + 'px';
-      menu.style.display = 'block';
-    }
-  }
+  if(e.target && e.target.closest && e.target.closest('.am-dot')) return;
+  document.querySelectorAll('.am-menu').forEach(function(m){ m.style.display = 'none'; });
 });
 /* 生成调度单号：DD + 日期 + 2位序号 */
 function nextOrderNo(dateStr){
