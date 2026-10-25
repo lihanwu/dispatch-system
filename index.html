@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261024n';
+var APP_VER = '20261024o';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -669,6 +669,17 @@ function vehicleById(id){ return DB.vehicles().find(function(v){ return v.id ===
 function driverById(id){ return DB.drivers().find(function(d){ return d.id === id; }) || null; }
 function orderById(id){ return DB.orders().find(function(o){ return o.id === id; }) || null; }
 function conflictById(id){ return DB.conflicts().find(function(c){ return c.id === id; }) || null; }
+/* 判断冲突记录里哪个订单是「套单」：手动新建(status=conflict)优先，其次手动指定(taoId)，最后按创建时间晚者为套单 */
+function conflictTaoId(c){
+  var a = c.orderA ? orderById(c.orderA) : null;
+  var b = c.orderB ? orderById(c.orderB) : null;
+  if(!a) return b ? b.id : '';
+  if(!b) return a.id;
+  if(a.status === 'conflict') return a.id;
+  if(b.status === 'conflict') return b.id;
+  if(c.taoId === a.id || c.taoId === b.id) return c.taoId;
+  return (a.createdAt || '') > (b.createdAt || '') ? a.id : b.id;
+}
 function userById(id){ return DB.users().find(function(u){ return u.id === id; }) || null; }
 
 /* 冲突检测：两订单时间区间是否重叠（endTime 恰好等于对方 startTime 不算重叠） */
@@ -1308,6 +1319,8 @@ RENDER.overview = function(){
         d.setDate(d.getDate()+1);
       }
     });
+    var confTaoIds = {};
+    pendConf.forEach(function(c){ var tid = conflictTaoId(c); if(tid) confTaoIds[tid] = 1; });
     var cells = dayList.map(function(dt){
       var list = (cellMap[v.id] || {})[dt] || [];
       var wb = isWeekend(dt) ? 'background:#FFFBF0;' : '';
@@ -1322,7 +1335,7 @@ RENDER.overview = function(){
           var ex = (o.extraVehicles || []).find(function(x){ return x.vehicleId === v.id; });
           if(ex && ex.driverId) drvId = ex.driverId;
           var drv = driverById(drvId);
-          var isConf = o.status === 'conflict';
+          var isConf = !!confTaoIds[o.id];
           return (o.tempSwap && drv ? '<b style="color:#C0392B">' + esc(drv.name) + '（临时改派）</b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + ' <b style="color:#8A6A1D">¥' + fmtMoney(daily) + '</b>' + (isConf ? ' <span style="color:#C0392B;font-weight:700">套单</span>' : ''); }).join('<br>') +
         '</div></td>';
     }).join('');
@@ -1520,9 +1533,10 @@ function renderConflictRows(){
     if(c.status === 'pending' && can('conflictHandle')) acts.push('<button type="button" class="btn link" data-action="conflict-handle" data-id="' + c.id + '">标记处理</button>');
     if(can('conflictHandle')) acts.push('<button type="button" class="btn link" data-action="conflict-toggle" data-id="' + c.id + '">' + (c.status === 'pending' ? '改为已处理' : '改回待处理') + '</button>');
     if(can('conflictDel')) acts.push('<button type="button" class="btn link danger" data-action="conflict-del" data-id="' + c.id + '">删除</button>');
+    var taoId = conflictTaoId(c);
     return '<tr>' +
       '<td>' + (idx+1) + '</td>' +
-      '<td><div class="cell-main">' + esc(a ? a.no : '—') + '</div><div class="cell-sub">' + esc(b ? b.no : '—') + '</div></td>' +
+      '<td>' + (a ? '<div class="cell-main">' + (a.id === taoId ? '<span style="color:#C0392B;font-weight:700">套单</span> ' : '<span style="color:#2E7D32">主线</span> ') + esc(a.no) + '</div>' : '<span class="badge neutral">—</span>') + (b ? '<div class="cell-sub">' + (b.id === taoId ? '<span style="color:#C0392B;font-weight:700">套单</span> ' : '<span style="color:#2E7D32">主线</span> ') + esc(b.no) + '</div>' : '') + '</td>' +
       '<td>' + (v ? '<div class="cell-main">' + esc(v.plate) + '</div>' : '<span class="badge neutral">—</span>') + '</td>' +
       '<td>' + (d ? '<div class="cell-main">' + esc(d.name) + '</div>' : '<span class="badge neutral">—</span>') + '</td>' +
       '<td>' + esc(c.reason) + '</td>' +
@@ -2438,20 +2452,28 @@ function conflictDel(id){
 }
 function conflictEdit(id){
   var c = conflictById(id);
+  var ea = c.orderA ? orderById(c.orderA) : null;
+  var eb = c.orderB ? orderById(c.orderB) : null;
+  var opts = '';
+  if(ea) opts += '<option value="' + ea.id + '">' + esc(ea.no) + '</option>';
+  if(eb) opts += '<option value="' + eb.id + '">' + esc(eb.no) + '</option>';
   openModal({
     title: '编辑套单记录',
     body:
       '<div class="field"><label>冲突原因</label><input id="ce-reason" maxlength="60" value="' + esc(c.reason || '') + '"></div>' +
+      (opts ? '<div class="field"><label>套单订单</label><select id="ce-tao"><option value="">自动判断</option>' + opts + '</select><div class="help">标记哪个订单是「套单」（后插入的重叠单），总览中以此单显示红字「套单」，另一单为主线</div></div>' : '') +
       '<div class="field"><label>处理说明</label><textarea id="ce-note" maxlength="100">' + esc(c.note || '') + '</textarea></div>',
     footer: '<button type="button" class="btn ghost" data-close>取消</button><button type="button" class="btn" id="ce-ok">保存</button>'
   });
+  var ce = document.getElementById('ce-tao');
+  if(ce) ce.value = conflictTaoId(c) || '';
   var bd = document.getElementById('modal-root').lastChild;
   bd.addEventListener('click', function(e){
     if(e.target.closest('[data-close]')) closeModal();
     if(e.target.closest('#ce-ok')){
       var confs = DB.conflicts();
       confs.forEach(function(x){
-        if(x.id === id){ x.reason = document.getElementById('ce-reason').value.trim() || x.reason; x.note = document.getElementById('ce-note').value.trim(); }
+        if(x.id === id){ x.reason = document.getElementById('ce-reason').value.trim() || x.reason; x.note = document.getElementById('ce-note').value.trim(); var tv = document.getElementById('ce-tao'); if(tv) x.taoId = tv.value || ''; }
       });
       DB.saveConflicts(confs);
       closeModal();
