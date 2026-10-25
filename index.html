@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261024l';
+var APP_VER = '20261024m';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -747,7 +747,8 @@ var ORDER_STATUS = {
   pending:    { label:'待执行', cls:'info' },
   executing:  { label:'执行中', cls:'warn' },
   done:       { label:'已完成', cls:'ok' },
-  cancelled:  { label:'已取消', cls:'neutral' }
+  cancelled:  { label:'已取消', cls:'neutral' },
+  conflict:   { label:'套单', cls:'warn' }
 };
 var VEHICLE_STATUS = {
   available:    { label:'可用', cls:'ok' },
@@ -1137,7 +1138,7 @@ function orderRow(o, withActions, idx, it){
     if(o.status === 'pending' && can('orderStart')) btns.push('<button type="button" class="btn link" data-action="order-start" data-id="' + o.id + '">开始执行</button>');
     if(o.status === 'executing' && can('orderDone')) btns.push('<button type="button" class="btn link" data-action="order-done" data-id="' + o.id + '">完成</button>');
     if((o.status === 'pending' || o.status === 'executing') && can('orderCancel')) btns.push('<button type="button" class="btn link warn" data-action="order-cancel" data-id="' + o.id + '">取消</button>');
-    if((o.status === 'pending' || o.status === 'executing' || o.status === 'done') && can('orderEdit')) btns.push('<button type="button" class="btn link" data-action="order-edit" data-id="' + o.id + '">编辑</button>');
+    if((o.status === 'pending' || o.status === 'executing' || o.status === 'done' || o.status === 'conflict') && can('orderEdit')) btns.push('<button type="button" class="btn link" data-action="order-edit" data-id="' + o.id + '">编辑</button>');
         if(can('orderDel')) btns.push('<button type="button" class="btn link danger" data-action="order-del" data-id="' + o.id + '">删除</button>');
     if(btns.length){
       actions = actionMenu(btns);
@@ -1321,7 +1322,7 @@ RENDER.overview = function(){
           var ex = (o.extraVehicles || []).find(function(x){ return x.vehicleId === v.id; });
           if(ex && ex.driverId) drvId = ex.driverId;
           var drv = driverById(drvId);
-          var isConf = confDates[o.id] && confDates[o.id][dt];
+          var isConf = o.status === 'conflict';
           return (o.tempSwap && drv ? '<b style="color:#C0392B">' + esc(drv.name) + '（临时改派）</b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + ' <b style="color:#8A6A1D">¥' + fmtMoney(daily) + '</b>' + (isConf ? ' <span style="color:#C0392B;font-weight:700">套单</span>' : ''); }).join('<br>') +
         '</div></td>';
     }).join('');
@@ -1505,6 +1506,10 @@ function renderConflictRows(){
     var a = orderById(c.orderA), b = orderById(c.orderB);
     var v = c.vehicleId ? vehicleById(c.vehicleId) : null;
     var d = c.driverId ? driverById(c.driverId) : null;
+    if(!v && a) v = vehicleById(a.vehicleId);
+    if(!v && b) v = vehicleById(b.vehicleId);
+    if(!d && a) d = driverById(a.driverId);
+    if(!d && b) d = driverById(b.driverId);
     var oStart = '', oEnd = '';
     if(a && b){
       oStart = a.startTime > b.startTime ? a.startTime : b.startTime;
@@ -1531,7 +1536,7 @@ function renderConflictRows(){
 /* ---------- 审核 ---------- */
 RENDER.review = function(){
   var el = document.getElementById('view-review');
-  var orders = DB.orders();
+  var orders = DB.orders().filter(function(o){ return o.status !== 'conflict'; });
   var rows = orders.map(function(o, idx){
     var v = vehicleById(o.vehicleId), d = driverById(o.driverId);
     return '<tr>' +
@@ -2341,6 +2346,8 @@ function openConflictModal(){
     title: '新建套单',
     body: '<div class="grid two-col">' +
       '<div class="field"><label>调度单号</label><input id="cf-no" placeholder="自动生成"></div>' +
+      '<div class="field"><label>车辆</label><select id="cf-vehicle"><option value="">选择车辆</option>' + DB.vehicles().map(function(v){ return '<option value="' + v.id + '">' + esc(v.plate) + '</option>'; }).join('') + '</select><div class="help">必选，套单会显示在总览对应车辆格子</div></div>' +
+      '<div class="field"><label>驾驶员</label><select id="cf-driver"><option value="">选择驾驶员</option>' + DB.drivers().map(function(d){ return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('') + '</select><div class="help">必选，可为临时改派驾驶员</div></div>' +
       '<div class="field"><label>用车单位</label><input id="cf-unit" placeholder="用车单位"></div>' +
       '<div class="field"><label>用车人</label><input id="cf-name" placeholder="用车人"></div>' +
       '<div class="field"><label>业务员</label><input id="cf-sales" placeholder="业务员"></div>' +
@@ -2357,8 +2364,20 @@ function openConflictModal(){
   });
   document.getElementById('cf-save').addEventListener('click', function(){
     var no = document.getElementById('cf-no').value.trim() || ('DD' + todayStr().replace(/-/g,'') + String(Date.now()).slice(-4));
-    var c = { id: 'c' + Date.now(), orderA: 'manual_'+Date.now(), orderB: '', vehicleId: '', driverId: '', reason: document.getElementById('cf-reason').value.trim() || '手动登记套单', status: 'pending', createdAt: new Date().toISOString(), note: document.getElementById('cf-note').value.trim(), manual: true, no: no, customerUnit: document.getElementById('cf-unit').value.trim(), customerName: document.getElementById('cf-name').value.trim(), salesperson: document.getElementById('cf-sales').value.trim(), startPoint: document.getElementById('cf-start').value.trim(), endPoint: document.getElementById('cf-end').value.trim(), startTime: document.getElementById('cf-st').value, endTime: document.getElementById('cf-et').value, price: parseFloat(document.getElementById('cf-price').value)||0, mileage: document.getElementById('cf-km').value.trim() };
-    var confs = DB.conflicts(); confs.push(c); DB.saveConflicts(confs); closeModal(); RENDER.conflicts(); supaPush(); toast('套单已创建', 'warn');
+    var vid = document.getElementById('cf-vehicle').value;
+    var did = document.getElementById('cf-driver').value;
+    if(!vid || !did){ toast('请选择车辆和驾驶员', 'warn'); return; }
+    var st = document.getElementById('cf-st').value, et = document.getElementById('cf-et').value;
+    if(!st || !et){ toast('请填写开始和结束时间', 'warn'); return; }
+    if(et <= st){ toast('结束时间必须晚于开始时间', 'warn'); return; }
+    var sp = document.getElementById('cf-start').value.trim(), ep = document.getElementById('cf-end').value.trim();
+    if(!sp || !ep){ toast('请填写出发地和目的地', 'warn'); return; }
+    var reason = document.getElementById('cf-reason').value.trim() || '手动登记套单';
+    var oid = uid('o');
+    var o = { id: oid, no: no, vehicleId: vid, driverId: did, coDriverId: '', startPoint: sp, endPoint: ep, startTime: st, endTime: et, price: parseFloat(document.getElementById('cf-price').value)||0, salesperson: document.getElementById('cf-sales').value.trim(), customerUnit: document.getElementById('cf-unit').value.trim(), customerName: document.getElementById('cf-name').value.trim(), customerPhone: '', mileage: document.getElementById('cf-km').value.trim(), payCash: false, payTransfer: false, extraVehicles: [], splitPrice: false, tempSwap: false, status: 'conflict', note: document.getElementById('cf-note').value.trim(), createdAt: new Date().toISOString() };
+    var orders = DB.orders(); orders.push(o); DB.saveOrders(orders);
+    var c = { id: 'c' + Date.now(), orderA: oid, orderB: '', vehicleId: vid, driverId: did, reason: reason, status: 'pending', createdAt: new Date().toISOString(), note: document.getElementById('cf-note').value.trim(), manual: true, no: no, customerUnit: document.getElementById('cf-unit').value.trim(), customerName: document.getElementById('cf-name').value.trim(), salesperson: document.getElementById('cf-sales').value.trim(), startPoint: sp, endPoint: ep, startTime: st, endTime: et, price: parseFloat(document.getElementById('cf-price').value)||0, mileage: document.getElementById('cf-km').value.trim() };
+    var confs = DB.conflicts(); confs.push(c); DB.saveConflicts(confs); closeModal(); RENDER.conflicts(); supaPush(); toast('套单已创建，总览中以红字「套单」显示', 'warn');
   });
 }
 function conflictScan(){
