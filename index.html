@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261026a';
+var APP_VER = '20261026b';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -3067,6 +3067,46 @@ try{
     });
   }).observe(document.body, { childList:true, subtree:true });
 }catch(e){}
+</script>
+<script>
+// 日期选择框空值时显示中文占位「年-月-日」，替代浏览器默认的英文 yyyy-mm-dd
+(function(){
+  var PH_TEXT = '年-月-日';
+  function decorate(inp){
+    if(inp.dataset.phDone) return;
+    inp.dataset.phDone = '1';
+    if(inp.parentNode && inp.parentNode.classList && inp.parentNode.classList.contains('vds-ph-wrap')) return;
+    var wrap = document.createElement('span');
+    wrap.className = 'vds-ph-wrap';
+    wrap.style.cssText = 'position:relative;display:inline-flex;align-items:center;vertical-align:middle;';
+    if(inp.style.flex) wrap.style.flex = inp.style.flex;
+    var ph = document.createElement('span');
+    ph.className = 'vds-ph';
+    ph.style.cssText = 'position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9AA7AD;font-size:13px;pointer-events:none;white-space:nowrap;line-height:1;z-index:1;';
+    ph.textContent = PH_TEXT;
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+    wrap.appendChild(ph);
+    function upd(){ ph.style.display = inp.value ? 'none' : 'block'; }
+    upd();
+    inp.addEventListener('input', upd);
+    inp.addEventListener('change', upd);
+    inp.addEventListener('focus', upd);
+    inp.addEventListener('blur', upd);
+  }
+  function scan(){ document.querySelectorAll('input[type=date]').forEach(decorate); }
+  scan();
+  try{
+    var mo = new MutationObserver(function(muts){
+      var hit = false;
+      for(var i=0;i<muts.length;i++){
+        if(muts[i].addedNodes && muts[i].addedNodes.length){ hit = true; break; }
+      }
+      if(hit) scan();
+    });
+    mo.observe(document.body, { childList:true, subtree:true });
+  }catch(e){}
+})();
 </script>
 </body>
 </html>
