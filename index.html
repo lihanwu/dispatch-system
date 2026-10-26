@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261024o';
+var APP_VER = '20261026a';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -478,7 +478,7 @@ var SEED = {
     {id:'c5', orderA:'o24', orderB:'o25', vehicleId:'v1', driverId:'d1', reason:'同一车辆与驾驶员时间重叠', status:'pending', createdAt:'2026-10-11T10:05', handledAt:null, note:''}
   ],
   users: [
-    {id:'u1', username:'15575889222', password:'lhw@15575889222', name:'李汉武', role:'admin'}
+    {id:'u1', username:'15575889222', password:'lhw$000909', name:'李汉武', role:'admin'}
   ]
 };
 
@@ -546,7 +546,7 @@ function normalizeData(){
   var us = DB.users().filter(function(x){ return !(x.id === 'u2' || x.id === 'u3'); });
   var first = us.find(function(x){ return x.id === 'u1'; });
   if(first && first.username === 'admin' && first.password === 'admin123'){
-    first.username = '15575889222'; first.password = 'lhw@15575889222'; first.name = '管理员';
+    first.username = '15575889222'; first.password = 'lhw$000909'; first.name = '管理员';
   }
   DB.saveUsers(us);
 }
@@ -2523,6 +2523,14 @@ async function migratePasswords(){
 
 /* ---------- 登录 / 登出 ---------- */
 async function doLogin(){
+  // 登录前强制从云端同步最新账号数据，避免本地缓存旧密码导致登录失败
+  try{
+    var res = await fetch(SUPA.url + '/rest/v1/users?select=*', { headers: supaHeaders() });
+    if(res.ok){
+      var rows = await res.json();
+      if(rows && rows.length) save(LS.users, rows.map(function(r){ return rowToObj('users', r); }));
+    }
+  }catch(e){}
   var user = document.getElementById('lg-user').value.trim();
   var pass = document.getElementById('lg-pass').value;
   var u = DB.users().find(function(x){ return x.username === user; });
@@ -3004,31 +3012,43 @@ function drawDashVehChart(){
 </script>
 <script>
 // 隐藏平台水印（豆包客户端在页面右下角叠加的「豆包AI生成」标识）
+// 注意：只清理真正的平台水印，绝不误删页面自身弹层（操作菜单 am-menu、弹窗 modal、toast 等）
 function hideWatermark(){
   var vw = window.innerWidth, vh = window.innerHeight;
-  document.querySelectorAll('*').forEach(function(el){
+  var targets = [];
+  var SKIP = ['am-menu','am-wrap','am-dot','modal','toast','dialog','pop','confirm','select'];
+  function isBiz(el){
+    var c = el.className;
+    if(!c) return false;
+    var s = String(c);
+    for(var i=0;i<SKIP.length;i++){ if(s.indexOf(SKIP[i]) >= 0) return true; }
+    return false;
+  }
+  document.querySelectorAll('div,span,img,p,button').forEach(function(el){
     try{
-      var cs = getComputedStyle(el);
+      if(isBiz(el)) return;
       var rect = el.getBoundingClientRect();
       if(!rect.width || !rect.height) return;
       var txt = (el.textContent || '').trim();
-      // 右下角悬浮小元素（平台水印容器/图标）
-      var isCornerBrand = (cs.position === 'fixed' || cs.position === 'absolute') &&
-        rect.left >= vw - 260 && rect.top >= vh - 260 && rect.right <= vw && rect.bottom <= vh &&
-        rect.width < 220 && rect.height < 220;
-      // 文本含「豆包 / Doubao / AI生成」的叶子元素
-      var isAIBrand = el.children.length === 0 && txt && txt.length < 40 &&
+      // 文本含「豆包 / Doubao / AI生成」的叶子元素（平台水印文案）
+      var isAILeaf = el.children.length === 0 && txt && txt.length < 40 &&
         (txt.indexOf('豆包') >= 0 || txt.indexOf('Doubao') >= 0 || txt.indexOf('doubao') >= 0 || /AI\s*生成/.test(txt));
-      if(isCornerBrand || isAIBrand){
-        el.style.display = 'none';
-        el.style.visibility = 'hidden';
-        if(el.parentNode) el.parentNode.removeChild(el);
+      // 平台水印容器：右下角悬浮小元素，且不含业务文本（空白图标容器）或文本即水印文案
+      var isCorner = rect.left >= vw - 260 && rect.top >= vh - 260 && rect.right <= vw && rect.bottom <= vh &&
+        rect.width < 220 && rect.height < 220;
+      var isFloat = false;
+      if(isCorner){ isFloat = (getComputedStyle(el).position === 'fixed' || getComputedStyle(el).position === 'absolute'); }
+      if(isAILeaf || (isFloat && (!txt || txt.length < 40))){
+        targets.push(el);
       }
     }catch(e){}
   });
+  targets.forEach(function(el){
+    try{ if(el.parentNode) el.parentNode.removeChild(el); }catch(e){}
+  });
 }
-setInterval(hideWatermark, 600);
-// 拦截平台重复注入的水印节点
+setInterval(hideWatermark, 3000);
+// 拦截平台重复注入的水印节点（仅当新增节点文本含豆包/AI生成时移除，不影响业务弹层）
 try{
   new MutationObserver(function(muts){
     muts.forEach(function(m){
@@ -3036,6 +3056,8 @@ try{
       for(var i=0;i<m.addedNodes.length;i++){
         var n = m.addedNodes[i];
         if(n.nodeType !== 1) continue;
+        var c = n.className ? String(n.className) : '';
+        if(c.indexOf('am-menu') >= 0 || c.indexOf('am-wrap') >= 0 || c.indexOf('modal') >= 0 || c.indexOf('toast') >= 0) continue;
         var t = (n.textContent || '');
         if((t.indexOf('豆包') >= 0 && t.length < 60) || /AI\s*生成/.test(t) || /Doubao|doubao/.test(t)){
           n.style.display = 'none';
