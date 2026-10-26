@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261026b';
+var APP_VER = '20261026d';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -2079,8 +2079,8 @@ function openBatchPrint(ids){
 function openOrderModal(editId, opts){
   var backfill = !!(opts && opts.backfill);
   var o = editId ? orderById(editId) : null;
-  var st = o ? o.startTime : (backfill ? yesterdayNoon() : defaultStartTime());
-  var et = o ? o.endTime : addHours(st, 2);
+  var st = o ? o.startTime : (backfill ? yesterdayNoon() : '');
+  var et = o ? o.endTime : (backfill ? addHours(st, 2) : '');
   openModal({
     title: o ? '编辑调度单' : (backfill ? '补录历史调度单' : '新建调度单'),
     wide: true,
@@ -3068,33 +3068,48 @@ try{
   }).observe(document.body, { childList:true, subtree:true });
 }catch(e){}
 </script>
+<style>
+  input.vds-ph-empty{ background: transparent; }
+  input[type=date].vds-ph-empty::-webkit-datetime-edit,
+  input[type=datetime-local].vds-ph-empty::-webkit-datetime-edit,
+  input[type=time].vds-ph-empty::-webkit-datetime-edit{ color: transparent; }
+</style>
 <script>
 // 日期选择框空值时显示中文占位「年-月-日」，替代浏览器默认的英文 yyyy-mm-dd
 (function(){
-  var PH_TEXT = '年-月-日';
+  function phFor(inp){
+    if(inp.type === 'datetime-local') return '年-月-日 时:分';
+    if(inp.type === 'time') return '时:分';
+    return '年-月-日';
+  }
   function decorate(inp){
     if(inp.dataset.phDone) return;
     inp.dataset.phDone = '1';
     if(inp.parentNode && inp.parentNode.classList && inp.parentNode.classList.contains('vds-ph-wrap')) return;
+    var PH_TEXT = phFor(inp);
     var wrap = document.createElement('span');
     wrap.className = 'vds-ph-wrap';
     wrap.style.cssText = 'position:relative;display:inline-flex;align-items:center;vertical-align:middle;';
     if(inp.style.flex) wrap.style.flex = inp.style.flex;
     var ph = document.createElement('span');
     ph.className = 'vds-ph';
-    ph.style.cssText = 'position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9AA7AD;font-size:13px;pointer-events:none;white-space:nowrap;line-height:1;z-index:1;';
+    ph.style.cssText = 'position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9AA7AD;font-size:13px;pointer-events:none;white-space:nowrap;line-height:1;z-index:5;';
     ph.textContent = PH_TEXT;
     inp.parentNode.insertBefore(wrap, inp);
     wrap.appendChild(inp);
     wrap.appendChild(ph);
-    function upd(){ ph.style.display = inp.value ? 'none' : 'block'; }
+    function upd(){
+      var empty = !inp.value;
+      ph.style.display = empty ? 'block' : 'none';
+      inp.classList.toggle('vds-ph-empty', empty);
+    }
     upd();
     inp.addEventListener('input', upd);
     inp.addEventListener('change', upd);
     inp.addEventListener('focus', upd);
     inp.addEventListener('blur', upd);
   }
-  function scan(){ document.querySelectorAll('input[type=date]').forEach(decorate); }
+  function scan(){ document.querySelectorAll('input[type=date], input[type=datetime-local], input[type=time]').forEach(decorate); }
   scan();
   try{
     var mo = new MutationObserver(function(muts){
