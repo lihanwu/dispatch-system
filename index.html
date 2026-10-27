@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261026d';
+var APP_VER = '20261027b';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -756,6 +756,7 @@ function deltaMinutes(a, b){ return Math.round((new Date(b) - new Date(a)) / 600
 
 var ORDER_STATUS = {
   pending:    { label:'待执行', cls:'info' },
+  confirmed:  { label:'已确认', cls:'ok' },
   executing:  { label:'执行中', cls:'warn' },
   done:       { label:'已完成', cls:'ok' },
   cancelled:  { label:'已取消', cls:'neutral' },
@@ -1147,9 +1148,10 @@ function orderRow(o, withActions, idx, it){
   if(withActions && !it.isExtra){
     var btns = [];
     if(o.status === 'pending' && can('orderStart')) btns.push('<button type="button" class="btn link" data-action="order-start" data-id="' + o.id + '">开始执行</button>');
+    if((o.status === 'pending' || o.status === 'confirmed') && can('orderStart')) btns.push('<button type="button" class="btn link ok" data-action="order-confirm" data-id="' + o.id + '">确认</button>');
     if(o.status === 'executing' && can('orderDone')) btns.push('<button type="button" class="btn link" data-action="order-done" data-id="' + o.id + '">完成</button>');
-    if((o.status === 'pending' || o.status === 'executing') && can('orderCancel')) btns.push('<button type="button" class="btn link warn" data-action="order-cancel" data-id="' + o.id + '">取消</button>');
-    if((o.status === 'pending' || o.status === 'executing' || o.status === 'done' || o.status === 'conflict') && can('orderEdit')) btns.push('<button type="button" class="btn link" data-action="order-edit" data-id="' + o.id + '">编辑</button>');
+    if((o.status === 'pending' || o.status === 'confirmed' || o.status === 'executing') && can('orderCancel')) btns.push('<button type="button" class="btn link warn" data-action="order-cancel" data-id="' + o.id + '">取消</button>');
+    if((o.status === 'pending' || o.status === 'confirmed' || o.status === 'executing' || o.status === 'done' || o.status === 'conflict') && can('orderEdit')) btns.push('<button type="button" class="btn link" data-action="order-edit" data-id="' + o.id + '">编辑</button>');
         if(can('orderDel')) btns.push('<button type="button" class="btn link danger" data-action="order-del" data-id="' + o.id + '">删除</button>');
     if(btns.length){
       actions = actionMenu(btns);
@@ -1181,7 +1183,7 @@ RENDER.dashboard = function(){
   var rangeOrders = orders.filter(inRange);
   var pendingCn = pendingC.length;
   var executing = rangeOrders.filter(function(o){ return o.status === 'executing'; }).length;
-  var pendingN = rangeOrders.filter(function(o){ return o.status === 'pending'; }).length;
+  var pendingN = rangeOrders.filter(function(o){ return o.status === 'pending' || o.status === 'confirmed'; }).length;
   var rangeRev = rangeOrders.reduce(function(s,o){ return s + (parseFloat(o.price) || 0); }, 0);
   var rangeAvg = rangeOrders.length ? rangeRev / rangeOrders.length : 0;
 
@@ -1326,6 +1328,8 @@ RENDER.overview = function(){
       var wb = isWeekend(dt) ? 'background:#FFFBF0;' : '';
       var hasConf = list.some(function(o){ return confDates[o.id] && confDates[o.id][dt]; });
       if(hasConf) wb += 'background:#FFE8B0;';
+      var allConfirmed = list.length > 0 && list.every(function(o){ return o.status === 'confirmed'; });
+      if(allConfirmed && !hasConf) wb += 'background:#E2F3E2;';
       if(!list.length) return '<td style="' + wb + '"></td>';
       return '<td style="' + wb + '"><div style="font-size:11px;line-height:1.5">' +
         list.map(function(o){
@@ -1336,7 +1340,9 @@ RENDER.overview = function(){
           if(ex && ex.driverId) drvId = ex.driverId;
           var drv = driverById(drvId);
           var isConf = !!confTaoIds[o.id];
-          return (o.tempSwap && drv ? '<b style="color:#C0392B">' + esc(drv.name) + '（临时改派）</b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + ' <b style="color:#8A6A1D">¥' + fmtMoney(daily) + '</b>' + (isConf ? ' <span style="color:#C0392B;font-weight:700">套单</span>' : ''); }).join('<br>') +
+          var isConfirmed = o.status === 'confirmed';
+          var rowStyle = isConfirmed ? 'style="color:#2E7D32"' : '';
+          return '<span ' + rowStyle + '>' + (o.tempSwap && drv ? '<b style="color:#C0392B">' + esc(drv.name) + '（临时改派）</b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + ' <b style="color:' + (isConfirmed ? '#2E7D32' : '#8A6A1D') + '">¥' + fmtMoney(daily) + '</b>' + (isConf ? ' <span style="color:#C0392B;font-weight:700">套单</span>' : '') + (isConfirmed ? ' <span style="color:#2E7D32;font-weight:700">✓已确认</span>' : '') + '</span>'; }).join('<br>') +
         '</div></td>';
     }).join('');
     return '<tr>' +
@@ -1567,7 +1573,9 @@ RENDER.review = function(){
       '<td>¥' + fmtMoney(o.price) + '</td>' +
       '<td><input class="inline-input" style="width:60px;border:1px solid #ddd;padding:2px 4px" data-field="mileage" data-id="' + o.id + '" value="' + esc(o.mileage||'') + '" placeholder="公里"></td>' +
       '<td>' + esc(o.salesperson||'—') + '</td>' +
-      '<td><button type="button" class="btn link" data-action="order-edit" data-id="' + o.id + '">编辑</button> <button type="button" class="btn link" data-action="order-print" data-id="' + o.id + '">打印</button></td>' +
+      '<td><button type="button" class="btn link" data-action="order-edit" data-id="' + o.id + '">编辑</button> <button type="button" class="btn link" data-action="order-print" data-id="' + o.id + '">打印</button>' +
+      (o.status === 'pending' && can('orderStart') ? ' <button type="button" class="btn link ok" data-action="order-confirm" data-id="' + o.id + '">确认</button>' : '') +
+      (o.status === 'confirmed' ? ' <span style="color:#2E7D32;font-weight:700">✓已确认</span>' : '') + '</td>' +
       '</tr>';
   }).join('');
   el.innerHTML =
@@ -1867,7 +1875,7 @@ function submitVehicleForm(editId){
 }
 function deleteVehicle(id){
   var v = vehicleById(id);
-  var busy = DB.orders().some(function(o){ return o.vehicleId === id && (o.status === 'pending' || o.status === 'executing'); });
+  var busy = DB.orders().some(function(o){ return o.vehicleId === id && (o.status === 'pending' || o.status === 'confirmed' || o.status === 'executing'); });
   confirmDialog('删除车辆', '确定删除车辆 <b>' + esc(v.plate) + '</b>？' + (busy ? '<br><span style="color:var(--danger)">该车仍有待执行 / 执行中的调度单，删除后这些调度单将失去车辆信息。</span>' : ''), '删除', 'danger', function(){
     var vehicles = DB.vehicles().filter(function(x){ return x.id !== id; });
     DB.saveVehicles(vehicles);
@@ -1973,7 +1981,7 @@ function submitDriverForm(editId){
 }
 function deleteDriver(id){
   var d = driverById(id);
-  var busy = DB.orders().some(function(o){ return o.driverId === id && (o.status === 'pending' || o.status === 'executing'); });
+  var busy = DB.orders().some(function(o){ return o.driverId === id && (o.status === 'pending' || o.status === 'confirmed' || o.status === 'executing'); });
   confirmDialog('删除驾驶员', '确定删除驾驶员 <b>' + esc(d.name) + '</b>？' + (busy ? '<br><span style="color:var(--danger)">该驾驶员仍有待执行 / 执行中的调度单，删除后这些调度单将失去驾驶员信息。</span>' : ''), '删除', 'danger', function(){
     var drivers = DB.drivers().filter(function(x){ return x.id !== id; });
     DB.saveDrivers(drivers);
@@ -2315,6 +2323,16 @@ function orderStart(id){
     toast('调度单已开始执行');
     refreshCurrent();
   });
+}
+function orderConfirm(id){
+  var o = orderById(id);
+  if(!o){ toast('未找到该调度单', 'warn'); return; }
+  if(o.status !== 'pending'){ toast('仅待执行的调度单可确认', 'warn'); return; }
+  var orders = DB.orders();
+  orders.forEach(function(x){ if(x.id === id) x.status = 'confirmed'; });
+  DB.saveOrders(orders);
+  toast('调度单已确认');
+  refreshCurrent();
 }
 function orderDone(id){
   var o = orderById(id);
@@ -2689,7 +2707,7 @@ function readQueryState(){
 var PERM_NEED = {
   'vehicle-add':'vehicleAdd', 'vehicle-edit':'vehicleEdit', 'vehicle-del':'vehicleDel',
   'driver-add':'driverAdd', 'driver-edit':'driverEdit', 'driver-del':'driverDel',
-  'order-new':'orderNew', 'order-backfill':'orderNew', 'order-edit':'orderEdit', 'order-start':'orderStart', 'order-done':'orderDone', 'order-cancel':'orderCancel', 'order-del':'orderDel',
+  'order-new':'orderNew', 'order-backfill':'orderNew', 'order-edit':'orderEdit', 'order-start':'orderStart', 'order-confirm':'orderStart', 'order-done':'orderDone', 'order-cancel':'orderCancel', 'order-del':'orderDel',
   'conflict-scan':'conflictScan', 'conflict-handle':'conflictHandle', 'conflict-edit':'conflictHandle', 'conflict-toggle':'conflictHandle', 'conflict-del':'conflictDel',
   'user-add':'manageUsers', 'user-edit':'manageUsers', 'user-del':'manageUsers',
   'reset-data':'resetData'
@@ -2727,6 +2745,7 @@ document.addEventListener('click', function(e){
       DB.saveOrders(DB.orders());
       tryPrintOrder(t.dataset.id); break;
     case 'order-start': orderStart(t.dataset.id); break;
+    case 'order-confirm': orderConfirm(t.dataset.id); break;
     case 'order-done': orderDone(t.dataset.id); break;
     case 'order-cancel': orderCancel(t.dataset.id); break;
     case 'order-del': orderDel(t.dataset.id); break;
