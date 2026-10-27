@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261027b';
+var APP_VER = '20261027c';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -1573,9 +1573,11 @@ RENDER.review = function(){
       '<td>¥' + fmtMoney(o.price) + '</td>' +
       '<td><input class="inline-input" style="width:60px;border:1px solid #ddd;padding:2px 4px" data-field="mileage" data-id="' + o.id + '" value="' + esc(o.mileage||'') + '" placeholder="公里"></td>' +
       '<td>' + esc(o.salesperson||'—') + '</td>' +
-      '<td><button type="button" class="btn link" data-action="order-edit" data-id="' + o.id + '">编辑</button> <button type="button" class="btn link" data-action="order-print" data-id="' + o.id + '">打印</button>' +
-      (o.status === 'pending' && can('orderStart') ? ' <button type="button" class="btn link ok" data-action="order-confirm" data-id="' + o.id + '">确认</button>' : '') +
-      (o.status === 'confirmed' ? ' <span style="color:#2E7D32;font-weight:700">✓已确认</span>' : '') + '</td>' +
+      '<td>' + (o.status === 'confirmed' ? '<span style="color:#2E7D32;font-weight:700;margin-right:4px">✓已确认</span>' : '') + actionMenu([
+      (o.status === 'pending' && can('orderStart') ? '<button type="button" class="btn link ok" data-action="order-confirm" data-id="' + o.id + '">确认</button>' : ''),
+      '<button type="button" class="btn link" data-action="order-edit" data-id="' + o.id + '">编辑</button>',
+      '<button type="button" class="btn link" data-action="order-print" data-id="' + o.id + '">打印</button>'
+      ].filter(Boolean)) + '</td>' +
       '</tr>';
   }).join('');
   el.innerHTML =
