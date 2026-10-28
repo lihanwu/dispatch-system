@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261027c';
+var APP_VER = '20261027e';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -1562,7 +1562,7 @@ RENDER.review = function(){
     return '<tr>' +
       '<td style="text-align:center"><input type="checkbox" class="rev-chk" data-id="' + o.id + '"></td>' +
       '<td>' + (idx+1) + '</td>' +
-      '<td>' + esc(o.no) + '</td>' +
+      '<td><div class="cell-main">' + esc(o.no) + '</div><div class="cell-sub">' + badge(ORDER_STATUS, o.status) + '</div></td>' +
       '<td style="white-space:nowrap">' + esc(v?v.plate:'—') + '</td>' +
       '<td>' + esc(d?d.name:'—') + '</td>' +
       '<td>' + esc(o.customerUnit||'—') + '</td>' +
@@ -1573,10 +1573,11 @@ RENDER.review = function(){
       '<td>¥' + fmtMoney(o.price) + '</td>' +
       '<td><input class="inline-input" style="width:60px;border:1px solid #ddd;padding:2px 4px" data-field="mileage" data-id="' + o.id + '" value="' + esc(o.mileage||'') + '" placeholder="公里"></td>' +
       '<td>' + esc(o.salesperson||'—') + '</td>' +
-      '<td>' + (o.status === 'confirmed' ? '<span style="color:#2E7D32;font-weight:700;margin-right:4px">✓已确认</span>' : '') + actionMenu([
-      (o.status === 'pending' && can('orderStart') ? '<button type="button" class="btn link ok" data-action="order-confirm" data-id="' + o.id + '">确认</button>' : ''),
+      '<td>' + (o.status === 'confirmed' ? '<span style="color:#2E7D32;font-weight:700;margin-right:4px">✓已确认</span>' : '') +
+      (o.status !== 'confirmed' && o.status !== 'cancelled' && can('orderStart') ? '<button type="button" class="btn link ok" data-action="order-confirm" data-id="' + o.id + '" style="margin-right:4px">确认</button>' : '') + actionMenu([
       '<button type="button" class="btn link" data-action="order-edit" data-id="' + o.id + '">编辑</button>',
-      '<button type="button" class="btn link" data-action="order-print" data-id="' + o.id + '">打印</button>'
+      '<button type="button" class="btn link" data-action="order-print" data-id="' + o.id + '">打印</button>',
+      ((o.status === 'pending' || o.status === 'confirmed' || o.status === 'executing') && can('orderCancel') ? '<button type="button" class="btn link warn" data-action="order-cancel" data-id="' + o.id + '">取消</button>' : '')
       ].filter(Boolean)) + '</td>' +
       '</tr>';
   }).join('');
@@ -2329,7 +2330,8 @@ function orderStart(id){
 function orderConfirm(id){
   var o = orderById(id);
   if(!o){ toast('未找到该调度单', 'warn'); return; }
-  if(o.status !== 'pending'){ toast('仅待执行的调度单可确认', 'warn'); return; }
+  if(o.status === 'cancelled'){ toast('已取消的调度单不能确认', 'warn'); return; }
+  if(o.status === 'confirmed'){ toast('该调度单已确认', 'warn'); return; }
   var orders = DB.orders();
   orders.forEach(function(x){ if(x.id === id) x.status = 'confirmed'; });
   DB.saveOrders(orders);
