@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261027e';
+var APP_VER = '20261027f';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -2585,11 +2585,33 @@ function logout(){
   showLogin();
 }
 function resetDataConfirm(){
-  confirmDialog('清空全部数据', '将清空车辆、驾驶员、调度单和套单记录（保留管理员登录账号），所有数据不可恢复。确定继续？', '清空', 'danger', function(){
+  var cur = DB.users().find(function(x){ return x.id === sessionStorage.getItem('vds_session'); }) || DB.users()[0] || null;
+  openModal({
+    title: '清空全部数据（需验证密码）',
+    body: '<div style="font-size:14px;color:var(--muted);margin-bottom:10px">将清空车辆、驾驶员、调度单和套单记录（保留管理员登录账号），所有数据不可恢复。请输入当前账号 <b>' + esc(cur ? cur.username : '') + '</b> 的登录密码确认：</div>' +
+      '<input type="password" id="rst-pass" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;box-sizing:border-box" placeholder="请输入登录密码">' +
+      '<div id="rst-err" style="color:#C0392B;font-size:12px;margin-top:6px;display:none">密码错误，请重新输入</div>',
+    footer: '<button type="button" class="btn ghost" data-close>取消</button>' +
+            '<button type="button" class="btn danger" id="rst-ok">验证并清空</button>'
+  });
+  var bd = document.getElementById('modal-root').lastChild;
+  var inp = bd.querySelector('#rst-pass'), err = bd.querySelector('#rst-err');
+  if(inp) inp.focus();
+  async function doReset(){
+    var v = inp ? inp.value : '';
+    if(!v || !cur || !(await passMatch(v, cur.password))){
+      if(err) err.style.display = 'block';
+      return;
+    }
+    closeModal();
     resetData();
     toast('已重置为示例数据');
     refreshCurrent();
+  }
+  bd.addEventListener('click', function(e){
+    if(e.target.closest('#rst-ok')) doReset();
   });
+  if(inp) inp.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); doReset(); } });
 }
 
 /* ---------- 用户管理（仅管理员） ---------- */
