@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261027h';
+var APP_VER = '20261027i';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -2254,7 +2254,6 @@ function submitOrderForm(editId, backfill){
   if(endTime <= startTime){ orderFormErr('计划结束时间必须晚于开始时间'); return; }
   var v = vehicleById(vehicleId);
   if(v && v.status === 'maintenance'){ orderFormErr('所选车辆正在维修中，不可派单'); return; }
-  if(v && permExpiryState(v.permitExpiry) === 'expired'){ orderFormErr('所选车辆线路牌已过期，请更换车辆'); return; }
   var drv = driverById(driverId);
   if(drv && drv.onRest){ orderFormErr('所选驾驶员正在调休，不可派单'); return; }
   if(drv && permExpiryState(drv.licenseExpiry) === 'expired'){ orderFormErr('所选驾驶员从业证件已过期，请更换驾驶员'); return; }
