@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261027f';
+var APP_VER = '20261027g';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -500,6 +500,10 @@ function resetData(){
   var admin = DB.users().find(function(u){ return u.id === 'u1'; }) || SEED.users[0];
   DB.saveUsers([admin]);
   localStorage.setItem(LS.ver, 'v1');
+  /* 显式清空云端四表（保留 users），使各端同步为空 */
+  ['vehicles','drivers','orders','conflicts'].forEach(function(t){
+    fetch(SUPA.url + '/rest/v1/' + t + '?select=id', { method: 'DELETE', headers: supaHeaders() }).catch(function(){});
+  });
 }
 function calcAge(birthYear){
   if(!birthYear) return '';
@@ -2129,6 +2133,7 @@ function openOrderModal(editId, opts){
         '<div class="field"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" name="tempSwap" id="of-tempswap" style="width:auto" ' + (o && o.tempSwap ? 'checked' : '') + '> 临时改排驾驶员</label><div class="help">勾选表示本次派车临时更换了驾驶员（非默认绑定），保存后在列表中以橙色标记</div></div>' +
         '<div class="field" id="of-tempwrap" style="display:none"><label>临时改派驾驶员</label><select id="of-tempdriver"><option value="">选择临时驾驶员</option>' + DB.drivers().map(function(d){ return '<option value="' + d.id + '"' + (o && o.tempSwap && d.id === o.driverId ? ' selected' : '') + '>' + esc(d.name) + '</option>'; }).join('') + '</select><div class="help">勾选上方后，从这里选临时开车的驾驶员，保存时以此人为准</div></div>' +
         '<div class="field full"><label>备注</label><textarea name="note" maxlength="100">' + esc(o ? o.note : '') + '</textarea><div class="help">保存时自动检测同一车辆或驾驶员在时间上是否重叠，冲突将弹窗提醒并生成套单记录</div></div>' +
+        '<div id="of-err" style="display:none;background:#FDECEA;color:#C0392B;font-size:13px;padding:8px 10px;border-radius:8px;margin-top:8px"></div>' +
       '</form>',
     footer: '<button type="button" class="btn ghost" data-close>取消</button><button type="button" class="btn" id="of-save">保存</button>'
   });
@@ -2215,40 +2220,47 @@ function openOrderModal(editId, opts){
   function toggleTemp(){ tw.style.display = ts.checked ? '' : 'none'; }
   ts.addEventListener('change', toggleTemp); toggleTemp();
 }
+function orderFormErr(msg){
+  var el = document.getElementById('of-err');
+  if(el){ el.textContent = msg; el.style.display = 'block'; }
+  toast(msg, 'warn');
+}
 function submitOrderForm(editId, backfill){
+  var errEl = document.getElementById('of-err');
+  if(errEl) errEl.style.display = 'none';
   var form = document.getElementById('of-form');
   var vehicleId = form.vehicleId.value, driverId = form.driverId.value;
   if(!vehicleById(vehicleId)){
     var vmatch = DB.vehicles().find(function(v){ return v.plate === vehicleId; });
     if(vmatch) vehicleId = vmatch.id;
   }
-  if(!vehicleById(vehicleId)){ toast('请选择车辆', 'warn'); return; }
+  if(!vehicleById(vehicleId)){ orderFormErr('请选择车辆（弹窗最上方表格中勾选一台主车）'); return; }
   if(form.tempSwap.checked){
     var td = document.getElementById('of-tempdriver');
-    if(!td || !td.value){ toast('请选择临时驾驶员', 'warn'); return; }
+    if(!td || !td.value){ orderFormErr('请选择临时驾驶员'); return; }
     driverId = td.value;
   }
   var startPoint = form.startPoint.value.trim(), endPoint = form.endPoint.value.trim();
   var startTime = form.startTime.value, endTime = form.endTime.value;
-  if(!vehicleId){ toast('请选择车辆', 'warn'); return; }
-  if(!driverId){ toast('请选择驾驶员', 'warn'); return; }
-  if(!startPoint || !endPoint){ toast('请填写起点和终点', 'warn'); return; }
-  if(!startTime || !endTime){ toast('请填写计划开始与结束时间', 'warn'); return; }
-  if(endTime <= startTime){ toast('计划结束时间必须晚于开始时间', 'warn'); return; }
+  if(!vehicleId){ orderFormErr('请选择车辆'); return; }
+  if(!driverId){ orderFormErr('请选择驾驶员'); return; }
+  if(!startPoint || !endPoint){ orderFormErr('请填写起点和终点'); return; }
+  if(!startTime || !endTime){ orderFormErr('请填写计划开始与结束时间'); return; }
+  if(endTime <= startTime){ orderFormErr('计划结束时间必须晚于开始时间'); return; }
   var v = vehicleById(vehicleId);
-  if(v && v.status === 'maintenance'){ toast('所选车辆正在维修中，不可派单', 'warn'); return; }
-  if(v && permExpiryState(v.permitExpiry) === 'expired'){ toast('所选车辆线路牌已过期，请更换车辆', 'warn'); return; }
+  if(v && v.status === 'maintenance'){ orderFormErr('所选车辆正在维修中，不可派单'); return; }
+  if(v && permExpiryState(v.permitExpiry) === 'expired'){ orderFormErr('所选车辆线路牌已过期，请更换车辆'); return; }
   var drv = driverById(driverId);
-  if(drv && drv.onRest){ toast('所选驾驶员正在调休，不可派单', 'warn'); return; }
-  if(drv && permExpiryState(drv.licenseExpiry) === 'expired'){ toast('所选驾驶员从业证件已过期，请更换驾驶员', 'warn'); return; }
+  if(drv && drv.onRest){ orderFormErr('所选驾驶员正在调休，不可派单'); return; }
+  if(drv && permExpiryState(drv.licenseExpiry) === 'expired'){ orderFormErr('所选驾驶员从业证件已过期，请更换驾驶员'); return; }
   var coId = form.coDriverId ? form.coDriverId.value : '';
   var extraVehicles = [];
   try{ extraVehicles = JSON.parse(document.getElementById('of-extra').value || '[]'); }catch(e){ extraVehicles = []; }
   var splitPrice = form.splitPrice ? form.splitPrice.checked === true : false;
-  if(coId && coId === driverId){ toast('副班驾驶员不能与主班为同一人', 'warn'); return; }
+  if(coId && coId === driverId){ orderFormErr('副班驾驶员不能与主班为同一人'); return; }
   var coDrv = coId ? driverById(coId) : null;
-  if(coDrv && coDrv.onRest){ toast('所选副班正在调休，不可派单', 'warn'); return; }
-  if(coDrv && permExpiryState(coDrv.licenseExpiry) === 'expired'){ toast('所选副班从业证件已过期，请更换', 'warn'); return; }
+  if(coDrv && coDrv.onRest){ orderFormErr('所选副班正在调休，不可派单'); return; }
+  if(coDrv && permExpiryState(coDrv.licenseExpiry) === 'expired'){ orderFormErr('所选副班从业证件已过期，请更换'); return; }
   var old = editId ? orderById(editId) : null;
   var data = {
     vehicleId: vehicleId, driverId: driverId, coDriverId: coId, startPoint: startPoint, endPoint: endPoint,
