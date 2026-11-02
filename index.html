@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261027i';
+var APP_VER = '20261027j';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -655,9 +655,21 @@ async function supaPush(tn, list){
 /* 按 id 显式删除云端某行（页面删除操作调用，避免全量 DELETE 误删他人数据） */
 function supaDeleteRow(tn, id){
   if(!id) return;
-  try{
-    fetch(SUPA.url + '/rest/v1/' + tn + '?id=eq.' + encodeURIComponent(String(id).replace(/,/g, '')), { method:'DELETE', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal' }) }).then(function(res){ if(!res.ok) console.error('DEL_ROW_FAIL:' + tn + ':' + res.status); });
-  }catch(e){}
+  var url = SUPA.url + '/rest/v1/' + tn + '?id=eq.' + encodeURIComponent(String(id).replace(/,/g, ''));
+  var attempt = 0;
+  (function tryDel(){
+    attempt++;
+    try{
+      fetch(url, { method:'DELETE', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal' }) }).then(function(res){
+        if(res.ok) return;
+        if(attempt < 3){ setTimeout(tryDel, 1200); }
+        else{ toast('⚠️ ' + tn + ' 删除未同步到云端，请检查网络后重试', 'warn'); }
+      }).catch(function(){
+        if(attempt < 3){ setTimeout(tryDel, 1200); }
+        else{ toast('⚠️ ' + tn + ' 删除未同步到云端，请检查网络后重试', 'warn'); }
+      });
+    }catch(e){}
+  })();
 }
 ['vehicles','drivers','orders','conflicts','users'].forEach(function(tn){
   var key = 'save' + tn[0].toUpperCase() + tn.slice(1);
