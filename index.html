@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261027g';
+var APP_VER = '20261027h';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -2222,7 +2222,12 @@ function openOrderModal(editId, opts){
 }
 function orderFormErr(msg){
   var el = document.getElementById('of-err');
-  if(el){ el.textContent = msg; el.style.display = 'block'; }
+  if(el){
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.style.border = '2px solid #C0392B';
+    try{ el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }catch(e){}
+  }
   toast(msg, 'warn');
 }
 function submitOrderForm(editId, backfill){
