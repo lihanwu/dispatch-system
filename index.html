@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261027j';
+var APP_VER = '20261027k';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -608,7 +608,7 @@ async function supaPull(){
       var res = await fetch(SUPA.url + '/rest/v1/' + tn + '?select=*', { headers: supaHeaders() });
       if(!res.ok) continue;
       var rows = await res.json();
-      var objs = rows.map(function(r){ return rowToObj(tn, r); });
+      var objs = rows.map(function(r){ return rowToObj(tn, r); }).filter(function(o){ return !isTomb(tn, o.id); });
       save(LS[tn], objs);
       if(!objs.length && tn === 'users'){ supaPush('users', SEED.users); }
     }catch(e){}
@@ -622,7 +622,7 @@ async function supaPush(tn, list){
   // 若此时跳过推送，用户保存的数据将永远不上云端，并被后续拉取回滚（表现为"保存后刷新又恢复"）。
   // 改为始终尝试推送；成功则确认在线，失败由调用方 toast 提示。
   try{
-    var rows = list.map(function(o){ return objToRow(tn, o); });
+    var rows = list.filter(function(o){ return !isTomb(tn, o.id); }).map(function(o){ return objToRow(tn, o); });
     if(rows.length){
       // 逐行 PATCH 更新：云端已存在的行按 id 更新（编辑同步）；不存在的行 PATCH 无效果，由下方 POST 插入
       var CH = 8;
@@ -652,24 +652,40 @@ async function supaPush(tn, list){
     return true;
   }catch(e){ console.error('PUSH_FAIL:' + (e && e.message ? e.message : e)); return false; }
 }
-/* 按 id 显式删除云端某行（页面删除操作调用，避免全量 DELETE 误删他人数据） */
+/* 按 id 显式删除云端某行（页面删除操作调用，避免全量 DELETE 误删他人数据）。
+   实测发现 fetch 的 DELETE 在保存推送（多批 PATCH/POST）并发时会被挤占/取消，导致云端删不掉、
+   15 秒后被拉回（"删了又恢复"）。改用同步 XMLHttpRequest：删除请求不会被异步推送淹没，
+   一次完成即确认成功；最多重试 3 次，仍失败给用户可见提示。
+   删除成功同时记入本端"墓碑"（tombstone）：后续周期推送/拉取都会跳过这些 id，
+   彻底防止"删除后又因旧缓存/竞态推送被复活"。 */
 function supaDeleteRow(tn, id){
   if(!id) return;
   var url = SUPA.url + '/rest/v1/' + tn + '?id=eq.' + encodeURIComponent(String(id).replace(/,/g, ''));
   var attempt = 0;
   (function tryDel(){
     attempt++;
+    var ok = false;
     try{
-      fetch(url, { method:'DELETE', headers: Object.assign(supaHeaders(), { Prefer:'return=minimal' }) }).then(function(res){
-        if(res.ok) return;
-        if(attempt < 3){ setTimeout(tryDel, 1200); }
-        else{ toast('⚠️ ' + tn + ' 删除未同步到云端，请检查网络后重试', 'warn'); }
-      }).catch(function(){
-        if(attempt < 3){ setTimeout(tryDel, 1200); }
-        else{ toast('⚠️ ' + tn + ' 删除未同步到云端，请检查网络后重试', 'warn'); }
-      });
-    }catch(e){}
+      var x = new XMLHttpRequest();
+      x.open('DELETE', url, false);
+      var h = supaHeaders();
+      for(var k in h){ try{ x.setRequestHeader(k, h[k]); }catch(e){} }
+      try{ x.setRequestHeader('Prefer', 'return=minimal'); }catch(e){}
+      x.send();
+      ok = (x.status >= 200 && x.status < 300);
+    }catch(e){ ok = false; }
+    if(ok){ tombAdd(tn, id); return; }
+    if(attempt < 3){ setTimeout(tryDel, 600); }
+    else{ toast('⚠️ ' + tn + ' 删除未同步到云端，请检查网络后重试', 'warn'); }
   })();
+}
+/* 墓碑：记录已删除行的 id，推送/拉取一律跳过，防止多端/竞态把已删数据复活 */
+var TOMB = (function(){ try{ return JSON.parse(localStorage.getItem('vds_tombs') || '{}'); }catch(e){ return {}; } })();
+function isTomb(tn, id){ var a = TOMB[tn] || []; return a.indexOf(id) > -1; }
+function tombAdd(tn, id){
+  if(!id || isTomb(tn, id)) return;
+  (TOMB[tn] = TOMB[tn] || []).push(id);
+  try{ localStorage.setItem('vds_tombs', JSON.stringify(TOMB)); }catch(e){}
 }
 ['vehicles','drivers','orders','conflicts','users'].forEach(function(tn){
   var key = 'save' + tn[0].toUpperCase() + tn.slice(1);
@@ -1101,6 +1117,12 @@ function confirmDialog(title, bodyHTML, okLabel, okClass, onOk){
     if(e.target.closest('[data-close]')) closeModal();
     if(e.target.closest('#cf-ok')){ closeModal(); onOk && onOk(); }
   });
+}
+/* 删除/编辑后保持页面滚动位置，避免列表重建后跳到顶部 */
+function withScrollRestore(fn){
+  var sc = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  fn();
+  requestAnimationFrame(function(){ window.scrollTo(0, sc); });
 }
 /* 表单选择项 */
 /* 车辆/驾驶员是否可派单（返回拦截原因，空串=可派） */
@@ -1896,14 +1918,16 @@ function deleteVehicle(id){
   var v = vehicleById(id);
   var busy = DB.orders().some(function(o){ return o.vehicleId === id && (o.status === 'pending' || o.status === 'confirmed' || o.status === 'executing'); });
   confirmDialog('删除车辆', '确定删除车辆 <b>' + esc(v.plate) + '</b>？' + (busy ? '<br><span style="color:var(--danger)">该车仍有待执行 / 执行中的调度单，删除后这些调度单将失去车辆信息。</span>' : ''), '删除', 'danger', function(){
-    var vehicles = DB.vehicles().filter(function(x){ return x.id !== id; });
-    DB.saveVehicles(vehicles);
-    supaDeleteRow('vehicles', id);
-    var drivers = DB.drivers();
-    drivers.forEach(function(d){ if(d.vehicleId === id) d.vehicleId = null; });
-    DB.saveDrivers(drivers);
-    toast('车辆已删除');
-    refreshCurrent();
+    withScrollRestore(function(){
+      var vehicles = DB.vehicles().filter(function(x){ return x.id !== id; });
+      DB.saveVehicles(vehicles);
+      supaDeleteRow('vehicles', id);
+      var drivers = DB.drivers();
+      drivers.forEach(function(d){ if(d.vehicleId === id) d.vehicleId = null; });
+      DB.saveDrivers(drivers);
+      toast('车辆已删除');
+      refreshCurrent();
+    });
   });
 }
 
@@ -2002,14 +2026,16 @@ function deleteDriver(id){
   var d = driverById(id);
   var busy = DB.orders().some(function(o){ return o.driverId === id && (o.status === 'pending' || o.status === 'confirmed' || o.status === 'executing'); });
   confirmDialog('删除驾驶员', '确定删除驾驶员 <b>' + esc(d.name) + '</b>？' + (busy ? '<br><span style="color:var(--danger)">该驾驶员仍有待执行 / 执行中的调度单，删除后这些调度单将失去驾驶员信息。</span>' : ''), '删除', 'danger', function(){
-    var drivers = DB.drivers().filter(function(x){ return x.id !== id; });
-    DB.saveDrivers(drivers);
-    supaDeleteRow('drivers', id);
-    var vehicles = DB.vehicles();
-    vehicles.forEach(function(v){ if(v.driverId === id) v.driverId = null; });
-    DB.saveVehicles(vehicles);
-    toast('驾驶员已删除');
-    refreshCurrent();
+    withScrollRestore(function(){
+      var drivers = DB.drivers().filter(function(x){ return x.id !== id; });
+      DB.saveDrivers(drivers);
+      supaDeleteRow('drivers', id);
+      var vehicles = DB.vehicles();
+      vehicles.forEach(function(v){ if(v.driverId === id) v.driverId = null; });
+      DB.saveVehicles(vehicles);
+      toast('驾驶员已删除');
+      refreshCurrent();
+    });
   });
 }
 
@@ -2392,16 +2418,18 @@ function orderCancel(id){
 function orderDel(id){
   var o = orderById(id);
   confirmDialog('删除调度单', '确定删除调度单 <b>' + esc(o.no) + '</b>？关联的套单记录也会一并删除。', '删除', 'danger', function(){
-    var wasExecuting = o.status === 'executing';
-    var orders = DB.orders().filter(function(x){ return x.id !== id; });
-    DB.saveOrders(orders);
-    supaDeleteRow('orders', id);
-    if(wasExecuting) releaseOrderResources(orderById(id));
-    var confs = DB.conflicts().filter(function(c){ return c.orderA !== id && c.orderB !== id; });
-    DB.saveConflicts(confs);
-    DB.conflicts().forEach(function(c){ if(c.orderA === id || c.orderB === id) supaDeleteRow('conflicts', c.id); });
-    toast('调度单已删除');
-    refreshCurrent();
+    withScrollRestore(function(){
+      var wasExecuting = o.status === 'executing';
+      var orders = DB.orders().filter(function(x){ return x.id !== id; });
+      DB.saveOrders(orders);
+      supaDeleteRow('orders', id);
+      if(wasExecuting) releaseOrderResources(orderById(id));
+      var confs = DB.conflicts().filter(function(c){ return c.orderA !== id && c.orderB !== id; });
+      DB.saveConflicts(confs);
+      DB.conflicts().forEach(function(c){ if(c.orderA === id || c.orderB === id) supaDeleteRow('conflicts', c.id); });
+      toast('调度单已删除');
+      refreshCurrent();
+    });
   });
 }
 
