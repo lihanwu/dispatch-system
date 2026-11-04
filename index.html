@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261104a';
+var APP_VER = '20261104b';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -2260,29 +2260,30 @@ function openOrderModal(editId, opts){
         refreshSel();
       });
     });
+    // 按车均分总价（绑定在 renderVTable 内以访问 selected 闭包；onclick 覆盖式绑定，避免查询按钮多次调用时重复叠加监听）
+    var sc = document.getElementById('of-splitcar');
+    if(sc){
+      sc.onclick = function(){
+        var pv = document.querySelector('input[name="price"]');
+        var total = Math.max(0, parseFloat(pv ? pv.value : 0) || 0);
+        var arr = Object.keys(selected).filter(function(id){ return vehicleById(id); });
+        if(!arr.length){ toast('请先勾选车辆', 'warn'); return; }
+        if(!total){ toast('请先填写合计价格', 'warn'); return; }
+        var base = Math.floor(total / arr.length);
+        var rem = total - base * arr.length;
+        arr.forEach(function(id, i){
+          selected[id].price = (i === 0) ? (base + rem) : base;
+          var pe = document.querySelector('#vf-tbody .vf-price[data-vid="' + id + '"]');
+          if(pe) pe.value = selected[id].price;
+        });
+        refreshSel();
+        toast('已按 ' + arr.length + ' 台车均分：合计 ¥' + total, 'ok');
+      };
+    }
     refreshSel();
   }
   renderVTable();
   document.getElementById('vf-search').addEventListener('click', renderVTable);
-  var sc = document.getElementById('of-splitcar');
-  if(sc){
-    sc.addEventListener('click', function(){
-      var pv = document.querySelector('input[name="price"]');
-      var total = Math.max(0, parseFloat(pv ? pv.value : 0) || 0);
-      var arr = Object.keys(selected).filter(function(id){ return vehicleById(id); });
-      if(!arr.length){ toast('请先勾选车辆', 'warn'); return; }
-      if(!total){ toast('请先填写合计价格', 'warn'); return; }
-      var base = Math.floor(total / arr.length);
-      var rem = total - base * arr.length;
-      arr.forEach(function(id, i){
-        selected[id].price = (i === 0) ? (base + rem) : base;
-        var pe = document.querySelector('#vf-tbody .vf-price[data-vid="' + id + '"]');
-        if(pe) pe.value = selected[id].price;
-      });
-      refreshSel();
-      toast('已按 ' + arr.length + ' 台车均分：合计 ¥' + total, 'ok');
-    });
-  }
   var ts = document.getElementById('of-tempswap');
   var tw = document.getElementById('of-tempwrap');
   function toggleTemp(){ tw.style.display = ts.checked ? '' : 'none'; }
