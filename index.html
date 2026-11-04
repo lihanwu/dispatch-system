@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261104b';
+var APP_VER = '20261104c';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -1391,7 +1391,7 @@ RENDER.overview = function(){
           var isConf = !!confTaoIds[o.id];
           var isConfirmed = o.status === 'confirmed';
           var rowStyle = isConfirmed ? 'style="color:#2E7D32"' : '';
-          return '<span ' + rowStyle + '>' + (o.tempSwap && drv ? '<b style="color:#C0392B">' + esc(drv.name) + '（临时改派）</b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + ' <b style="color:' + (isConfirmed ? '#2E7D32' : '#8A6A1D') + '">¥' + fmtMoney(share) + '</b>' + (o.extraVehicles && o.extraVehicles.length ? ' <span style="color:#1A6B8A;font-size:10px;font-weight:600">' + (isMain ? '主车' : '加车') + '</span>' : '') + (isConf ? ' <span style="color:#C0392B;font-weight:700">套单</span>' : '') + (isConfirmed ? ' <span style="color:#2E7D32;font-weight:700">✓已确认</span>' : '') + '</span>'; }).join('<br>') +
+          return '<span ' + rowStyle + '>' + (o.tempSwap && drv ? '<b style="color:#C0392B">' + esc(drv.name) + '（临时改派）</b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + '<br><b style="color:' + (isConfirmed ? '#2E7D32' : '#8A6A1D') + '">¥' + fmtMoney(share) + '</b>' + (o.extraVehicles && o.extraVehicles.length ? ' <span style="color:#1A6B8A;font-size:10px;font-weight:600">' + (isMain ? '主车' : '加车') + '</span>' : '') + (isConf ? ' <span style="color:#C0392B;font-weight:700">套单</span>' : '') + (isConfirmed ? ' <span style="color:#2E7D32;font-weight:700">✓已确认</span>' : '') + '</span>'; }).join('<br>') +
         '</div></td>';
     }).join('');
     return '<tr>' +
