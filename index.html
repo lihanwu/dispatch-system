@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
 <script>
 "use strict";
 /* ===== 版本缓存自动跳转：保证用户始终加载最新版 ===== */
-var APP_VER = '20261027k';
+var APP_VER = '20261104a';
 (function(){
   try{
     var qv = new URLSearchParams(location.search).get('v');
@@ -1372,15 +1372,26 @@ RENDER.overview = function(){
       return '<td style="' + wb + '"><div style="font-size:11px;line-height:1.5">' +
         list.map(function(o){
           var days = orderDays(o).length || 1;
-          var daily = o.splitPrice ? Math.round((parseFloat(o.price)||0)/days) : (parseFloat(o.price)||0);
-          var drvId = o.driverId;
+          // 多车行程按车显示分摊价格：主车行=合计-额外车之和；额外车行=该车价格；单车=整单价格
+          var isMain = o.vehicleId === v.id;
           var ex = (o.extraVehicles || []).find(function(x){ return x.vehicleId === v.id; });
+          var share;
+          if(isMain){
+            var exSum = 0; (o.extraVehicles||[]).forEach(function(x){ exSum += parseFloat(x.price)||0; });
+            share = Math.max(0, (parseFloat(o.price)||0) - exSum);
+          } else if(ex){
+            share = parseFloat(ex.price)||0;
+          } else {
+            share = parseFloat(o.price)||0;
+          }
+          if(o.splitPrice) share = Math.round(share / days);
+          var drvId = o.driverId;
           if(ex && ex.driverId) drvId = ex.driverId;
           var drv = driverById(drvId);
           var isConf = !!confTaoIds[o.id];
           var isConfirmed = o.status === 'confirmed';
           var rowStyle = isConfirmed ? 'style="color:#2E7D32"' : '';
-          return '<span ' + rowStyle + '>' + (o.tempSwap && drv ? '<b style="color:#C0392B">' + esc(drv.name) + '（临时改派）</b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + ' <b style="color:' + (isConfirmed ? '#2E7D32' : '#8A6A1D') + '">¥' + fmtMoney(daily) + '</b>' + (isConf ? ' <span style="color:#C0392B;font-weight:700">套单</span>' : '') + (isConfirmed ? ' <span style="color:#2E7D32;font-weight:700">✓已确认</span>' : '') + '</span>'; }).join('<br>') +
+          return '<span ' + rowStyle + '>' + (o.tempSwap && drv ? '<b style="color:#C0392B">' + esc(drv.name) + '（临时改派）</b><br>' : '') + esc(o.startPoint) + '→' + esc(o.endPoint) + (o.salesperson ? ' ' + esc(o.salesperson) : '') + ' <b style="color:' + (isConfirmed ? '#2E7D32' : '#8A6A1D') + '">¥' + fmtMoney(share) + '</b>' + (o.extraVehicles && o.extraVehicles.length ? ' <span style="color:#1A6B8A;font-size:10px;font-weight:600">' + (isMain ? '主车' : '加车') + '</span>' : '') + (isConf ? ' <span style="color:#C0392B;font-weight:700">套单</span>' : '') + (isConfirmed ? ' <span style="color:#2E7D32;font-weight:700">✓已确认</span>' : '') + '</span>'; }).join('<br>') +
         '</div></td>';
     }).join('');
     return '<tr>' +
@@ -2160,7 +2171,7 @@ function openOrderModal(editId, opts){
         '<div class="field"><label>终点<span class="req">*</span></label><input name="endPoint" required value="' + esc(o ? o.endPoint : '') + '" placeholder="如 星沙配送中心" maxlength="40"></div>' +
         '<div class="field"><label>计划开始<span class="req">*</span></label><input name="startTime" type="datetime-local" required value="' + esc(st) + '"></div>' +
         '<div class="field"><label>计划结束<span class="req">*</span></label><input name="endTime" type="datetime-local" required value="' + esc(et) + '"></div>' +
-        '<div class="field"><label>合计价格（元，自动=各车之和，可手动修改）</label><input name="price" type="number" min="0" step="10" value="' + esc(o && o.price !== undefined && o.price !== null ? o.price : '') + '" placeholder="勾选车辆后自动计算"></div>' +
+        '<div class="field"><label>合计价格（元，自动=各车之和，可手动修改）</label><input name="price" type="number" min="0" step="10" value="' + esc(o && o.price !== undefined && o.price !== null ? o.price : '') + '" placeholder="勾选车辆后自动计算"><button type="button" class="btn ghost" id="of-splitcar" style="margin-top:6px;width:100%">按车均分总价</button><div class="help">多车行程：把合计价格按已选车辆数均分，自动填入每台车价格（余数计入主车），调度总览按车显示各自价格</div></div>' +
         '<div class="field"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" name="splitPrice" style="width:auto" ' + (o && o.splitPrice ? 'checked' : '') + '> 多天行程按天分摊总价</label><div class="help">跨天行程勾选后，排班表每天显示 总价÷天数</div></div>' +
         '<div class="field"><label>业务员</label><input name="salesperson" maxlength="20" value="' + esc(o ? (o.salesperson || '') : '') + '" placeholder="负责该单的业务员"></div>' +
         '<div class="field"><label>用车单位</label><input name="customerUnit" maxlength="40" value="' + esc(o ? (o.customerUnit || '') : '') + '" placeholder="如：长沙某旅行社 / 某公司"></div>' +
@@ -2190,9 +2201,9 @@ function openOrderModal(editId, opts){
       if(drv){ var d = driverById(v.driverId); if(!d || d.name.toLowerCase().indexOf(drv) < 0) return false; }
       return true;
     });
-    // build selection state from existing order
+    // build selection state from existing order（主车价格 = 合计 - 额外车之和，保证每车价格正确回显）
     var selected = {};
-    if(o){ selected[o.vehicleId] = { driverId: o.driverId || '', price: o.price || 0 }; (o.extraVehicles||[]).forEach(function(x){ selected[x.vehicleId] = { driverId: x.driverId || '', price: x.price || 0 }; }); }
+    if(o){ var exSum = 0; (o.extraVehicles||[]).forEach(function(x){ selected[x.vehicleId] = { driverId: x.driverId || '', price: x.price || 0 }; exSum += parseFloat(x.price)||0; }); selected[o.vehicleId] = { driverId: o.driverId || '', price: Math.max(0, (parseFloat(o.price)||0) - exSum) }; }
     function refreshSel(){
       var arr = Object.keys(selected).filter(function(id){ return vehicleById(id); });
       vs.value = arr[0] || '';
@@ -2253,6 +2264,25 @@ function openOrderModal(editId, opts){
   }
   renderVTable();
   document.getElementById('vf-search').addEventListener('click', renderVTable);
+  var sc = document.getElementById('of-splitcar');
+  if(sc){
+    sc.addEventListener('click', function(){
+      var pv = document.querySelector('input[name="price"]');
+      var total = Math.max(0, parseFloat(pv ? pv.value : 0) || 0);
+      var arr = Object.keys(selected).filter(function(id){ return vehicleById(id); });
+      if(!arr.length){ toast('请先勾选车辆', 'warn'); return; }
+      if(!total){ toast('请先填写合计价格', 'warn'); return; }
+      var base = Math.floor(total / arr.length);
+      var rem = total - base * arr.length;
+      arr.forEach(function(id, i){
+        selected[id].price = (i === 0) ? (base + rem) : base;
+        var pe = document.querySelector('#vf-tbody .vf-price[data-vid="' + id + '"]');
+        if(pe) pe.value = selected[id].price;
+      });
+      refreshSel();
+      toast('已按 ' + arr.length + ' 台车均分：合计 ¥' + total, 'ok');
+    });
+  }
   var ts = document.getElementById('of-tempswap');
   var tw = document.getElementById('of-tempwrap');
   function toggleTemp(){ tw.style.display = ts.checked ? '' : 'none'; }
@@ -2435,11 +2465,51 @@ function orderDel(id){
 
 /* ---------- 套单记录 ---------- */
 function openConflictModal(){
+  var cfSel = {};
+  function renderCfVTable(){
+    var rows = DB.vehicles();
+    document.getElementById('cf-vtbody').innerHTML = rows.map(function(v){
+      var isSel = cfSel[v.id] !== undefined;
+      return '<tr data-vid="' + v.id + '" style="' + (isSel ? 'background:#E3F0FF' : '') + '">' +
+        '<td><input type="checkbox" class="cf-vcb" data-vid="' + v.id + '" style="width:auto"' + (isSel ? ' checked' : '') + '></td>' +
+        '<td>' + esc(v.plate) + '</td><td>' + (v.seats || '—') + '</td>' +
+        '<td><input class="cf-vprice" data-vid="' + v.id + '" type="number" min="0" value="' + esc(isSel ? cfSel[v.id] : '') + '" placeholder="0" style="padding:4px 6px;font-size:13px;width:80px"></td></tr>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('#cf-vtbody .cf-vcb'), function(cb){
+      cb.addEventListener('change', function(){
+        var vid = cb.getAttribute('data-vid');
+        if(cb.checked){
+          var pe = document.querySelector('#cf-vtbody .cf-vprice[data-vid="' + vid + '"]');
+          cfSel[vid] = pe ? (parseFloat(pe.value)||0) : 0;
+        } else { delete cfSel[vid]; }
+        refreshCfSel();
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#cf-vtbody .cf-vprice'), function(p){
+      p.addEventListener('change', function(){
+        var vid = p.getAttribute('data-vid');
+        if(cfSel[vid] !== undefined) cfSel[vid] = parseFloat(p.value)||0;
+        refreshCfSel();
+      });
+    });
+    refreshCfSel();
+  }
+  function refreshCfSel(){
+    var arr = Object.keys(cfSel).filter(function(id){ return vehicleById(id); });
+    var total = 0; arr.forEach(function(id){ total += cfSel[id]||0; });
+    document.getElementById('cf-vsel').textContent = arr.length ? '已选 ' + arr.length + ' 台（第一台为主车），合计 ¥' + total : '未选择车辆';
+  }
   openModal({
     title: '新建套单',
     body: '<div class="grid two-col">' +
       '<div class="field"><label>调度单号</label><input id="cf-no" placeholder="自动生成"></div>' +
-      '<div class="field"><label>车辆</label><select id="cf-vehicle"><option value="">选择车辆</option>' + DB.vehicles().map(function(v){ return '<option value="' + v.id + '">' + esc(v.plate) + '</option>'; }).join('') + '</select><div class="help">必选，套单会显示在总览对应车辆格子</div></div>' +
+      '<div class="field" style="grid-column:1/-1"><label>选择车辆（可多选，第一台为主车）<span class="req">*</span></label>' +
+        '<div style="border:1px solid var(--line-soft);border-radius:10px;padding:10px">' +
+          '<div style="overflow:auto;max-height:170px"><table style="width:100%;font-size:13px;text-align:center"><thead><tr style="background:var(--bg);position:sticky;top:0"><th style="width:30px"></th><th>车牌</th><th>座位</th><th>本车价格</th></tr></thead><tbody id="cf-vtbody"></tbody></table></div>' +
+          '<div id="cf-vsel" style="font-size:13px;margin-top:6px;color:var(--brand-deep)">未选择车辆</div>' +
+          '<button type="button" class="btn ghost" id="cf-splitcar" style="margin-top:6px">按车均分总价</button><div class="help">勾选多台车后，在「费用」填总价，点「按车均分总价」自动分摊到每台车</div>' +
+        '</div>' +
+      '</div>' +
       '<div class="field"><label>驾驶员</label><select id="cf-driver"><option value="">选择驾驶员</option>' + DB.drivers().map(function(d){ return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('') + '</select><div class="help">必选，可为临时改派驾驶员</div></div>' +
       '<div class="field"><label>用车单位</label><input id="cf-unit" placeholder="用车单位"></div>' +
       '<div class="field"><label>用车人</label><input id="cf-name" placeholder="用车人"></div>' +
@@ -2455,21 +2525,45 @@ function openConflictModal(){
       '</div>',
     footer: '<button type="button" class="btn ghost" data-close>取消</button><button type="button" class="btn" id="cf-save">保存</button>'
   });
+  renderCfVTable();
+  var sc = document.getElementById('cf-splitcar');
+  if(sc){
+    sc.addEventListener('click', function(){
+      var arr = Object.keys(cfSel).filter(function(id){ return vehicleById(id); });
+      if(!arr.length){ toast('请先勾选车辆', 'warn'); return; }
+      var total = Math.max(0, parseFloat(document.getElementById('cf-price').value)||0);
+      if(!total){ toast('请先在「费用」填写总价', 'warn'); return; }
+      var base = Math.floor(total / arr.length);
+      var rem = total - base * arr.length;
+      arr.forEach(function(id, i){ cfSel[id] = (i === 0) ? (base + rem) : base; });
+      Array.prototype.forEach.call(document.querySelectorAll('#cf-vtbody .cf-vprice'), function(p){
+        var vid = p.getAttribute('data-vid');
+        if(cfSel[vid] !== undefined) p.value = cfSel[vid];
+      });
+      refreshCfSel();
+      toast('已按 ' + arr.length + ' 台车均分：合计 ¥' + total, 'ok');
+    });
+  }
   document.getElementById('cf-save').addEventListener('click', function(){
     var no = document.getElementById('cf-no').value.trim() || ('DD' + todayStr().replace(/-/g,'') + String(Date.now()).slice(-4));
-    var vid = document.getElementById('cf-vehicle').value;
+    var arr = Object.keys(cfSel).filter(function(id){ return vehicleById(id); });
+    var vid = arr[0] || '';
     var did = document.getElementById('cf-driver').value;
-    if(!vid || !did){ toast('请选择车辆和驾驶员', 'warn'); return; }
+    if(!vid || !did){ toast('请选择车辆（勾选一台主车）和驾驶员', 'warn'); return; }
     var st = document.getElementById('cf-st').value, et = document.getElementById('cf-et').value;
     if(!st || !et){ toast('请填写开始和结束时间', 'warn'); return; }
     if(et <= st){ toast('结束时间必须晚于开始时间', 'warn'); return; }
     var sp = document.getElementById('cf-start').value.trim(), ep = document.getElementById('cf-end').value.trim();
     if(!sp || !ep){ toast('请填写出发地和目的地', 'warn'); return; }
     var reason = document.getElementById('cf-reason').value.trim() || '手动登记套单';
+    var sum = 0; arr.forEach(function(id){ sum += cfSel[id]||0; });
+    var fee = parseFloat(document.getElementById('cf-price').value)||0;
+    var price = sum || fee;
+    var extraVehicles = arr.slice(1).map(function(id){ return { vehicleId: id, driverId: '', price: cfSel[id]||0 }; });
     var oid = uid('o');
-    var o = { id: oid, no: no, vehicleId: vid, driverId: did, coDriverId: '', startPoint: sp, endPoint: ep, startTime: st, endTime: et, price: parseFloat(document.getElementById('cf-price').value)||0, salesperson: document.getElementById('cf-sales').value.trim(), customerUnit: document.getElementById('cf-unit').value.trim(), customerName: document.getElementById('cf-name').value.trim(), customerPhone: '', mileage: document.getElementById('cf-km').value.trim(), payCash: false, payTransfer: false, extraVehicles: [], splitPrice: false, tempSwap: false, status: 'conflict', note: document.getElementById('cf-note').value.trim(), createdAt: new Date().toISOString() };
+    var o = { id: oid, no: no, vehicleId: vid, driverId: did, coDriverId: '', startPoint: sp, endPoint: ep, startTime: st, endTime: et, price: price, salesperson: document.getElementById('cf-sales').value.trim(), customerUnit: document.getElementById('cf-unit').value.trim(), customerName: document.getElementById('cf-name').value.trim(), customerPhone: '', mileage: document.getElementById('cf-km').value.trim(), payCash: false, payTransfer: false, extraVehicles: extraVehicles, splitPrice: false, tempSwap: false, status: 'conflict', note: document.getElementById('cf-note').value.trim(), createdAt: new Date().toISOString() };
     var orders = DB.orders(); orders.push(o); DB.saveOrders(orders);
-    var c = { id: 'c' + Date.now(), orderA: oid, orderB: '', vehicleId: vid, driverId: did, reason: reason, status: 'pending', createdAt: new Date().toISOString(), note: document.getElementById('cf-note').value.trim(), manual: true, no: no, customerUnit: document.getElementById('cf-unit').value.trim(), customerName: document.getElementById('cf-name').value.trim(), salesperson: document.getElementById('cf-sales').value.trim(), startPoint: sp, endPoint: ep, startTime: st, endTime: et, price: parseFloat(document.getElementById('cf-price').value)||0, mileage: document.getElementById('cf-km').value.trim() };
+    var c = { id: 'c' + Date.now(), orderA: oid, orderB: '', vehicleId: vid, driverId: did, reason: reason, status: 'pending', createdAt: new Date().toISOString(), note: document.getElementById('cf-note').value.trim(), manual: true, no: no, customerUnit: document.getElementById('cf-unit').value.trim(), customerName: document.getElementById('cf-name').value.trim(), salesperson: document.getElementById('cf-sales').value.trim(), startPoint: sp, endPoint: ep, startTime: st, endTime: et, price: price, mileage: document.getElementById('cf-km').value.trim() };
     var confs = DB.conflicts(); confs.push(c); DB.saveConflicts(confs); closeModal(); RENDER.conflicts(); supaPush(); toast('套单已创建，总览中以红字「套单」显示', 'warn');
   });
 }
@@ -3174,6 +3268,10 @@ try{
   input[type=date].vds-ph-empty::-webkit-datetime-edit,
   input[type=datetime-local].vds-ph-empty::-webkit-datetime-edit,
   input[type=time].vds-ph-empty::-webkit-datetime-edit{ color: transparent; }
+  .vds-ph-wrap{ position:relative; display:inline-flex; align-items:center; vertical-align:middle; }
+  /* 表单字段内（.field）的日期/时间输入框保持 100% 全宽，避免被占位包装收缩导致点击区域变小 */
+  .field .vds-ph-wrap{ display:block !important; width:100% !important; }
+  .field .vds-ph-wrap input{ width:100%; }
 </style>
 <script>
 // 日期选择框空值时显示中文占位「年-月-日」，替代浏览器默认的英文 yyyy-mm-dd
